@@ -47,17 +47,17 @@
                 <!-- Handle Stremio deep links -->
                 <data android:scheme="stremio" android:host="playback" />
 
-                <!-- Handle local Stremio server on localhost -->
-                <data android:scheme="http" android:host="127.0.0.1" android:pathPattern=".*" />
-                <data android:scheme="http" android:host="localhost" android:pathPattern=".*" />
-                <!-- Handle common local network IP addresses for Stremio servers -->
-                <data android:scheme="http" android:host="192.168.1.1" android:pathPattern=".*" />
-                <data android:scheme="http" android:host="192.168.1.100" android:pathPattern=".*" />
-                <data android:scheme="http" android:host="192.168.0.1" android:pathPattern=".*" />
-                <data android:scheme="http" android:host="192.168.0.100" android:pathPattern=".*" />
-                <!-- Handle common domain patterns for Stremio servers -->
-                <data android:scheme="http" android:host="*.stremio.com" android:pathPattern=".*" />
-                <data android:scheme="http" android:host="*.strem.io" android:pathPattern=".*" />
+<!--                &lt;!&ndash; Handle local Stremio server on localhost &ndash;&gt;-->
+<!--                <data android:scheme="http" android:host="127.0.0.1" android:pathPattern=".*" />-->
+<!--                <data android:scheme="http" android:host="localhost" android:pathPattern=".*" />-->
+<!--                &lt;!&ndash; Handle common local network IP addresses for Stremio servers &ndash;&gt;-->
+<!--                <data android:scheme="http" android:host="192.168.1.1" android:pathPattern=".*" />-->
+<!--                <data android:scheme="http" android:host="192.168.1.100" android:pathPattern=".*" />-->
+<!--                <data android:scheme="http" android:host="192.168.0.1" android:pathPattern=".*" />-->
+<!--                <data android:scheme="http" android:host="192.168.0.100" android:pathPattern=".*" />-->
+<!--                &lt;!&ndash; Handle common domain patterns for Stremio servers &ndash;&gt;-->
+<!--                <data android:scheme="http" android:host="*.stremio.com" android:pathPattern=".*" />-->
+<!--                <data android:scheme="http" android:host="*.strem.io" android:pathPattern=".*" />-->
 
                 <!-- General HTTP and HTTPS links -->
                 <data android:scheme="http" />
