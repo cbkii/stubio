@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
@@ -42,7 +44,10 @@ class MainActivity : AppCompatActivity() {
         registerReceiver(VLCResultReceiver(), filter)
 
         // Close activity after processing the intent
-        finish()
+        // Small delay before finish to ensure proper handling
+        Handler(Looper.getMainLooper()).postDelayed({
+            finish()
+        }, 1000)
     }
 
     // Determines which media player to launch based on the incoming URI
@@ -95,23 +100,17 @@ class MainActivity : AppCompatActivity() {
             val playerIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(originalIntent.data, "video/*")
                 setPackage(pkgP2P)
+
+                // Pass through original intent extras
                 putExtras(originalIntent.extras ?: Bundle())
-                // Transfer essential extras, setting default values if they don't exist
-                val extras = originalIntent.extras ?: Bundle()
 
-                // Ensure "startfrom" is set, default to 0 if missing
-                putExtra("startfrom", extras.getInt("startfrom", 0))
-                // Ensure "position" is set, default to 0 if missing
-                putExtra("position", extras.getInt("position", 0))
-                // Ensure "return_result" is set, default to true if missing
-                putExtra("return_result", extras.getBoolean("return_result", true))
+                // Ensure essential extras exist
+                putExtra("startfrom", originalIntent.getIntExtra("startfrom", 0))
+                putExtra("position", originalIntent.getIntExtra("position", 0))
+                putExtra("return_result", true)
 
-                // Apply flags to maintain behavior given stub app intermediary
-                if (originalIntent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT != 0) {
-                    addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
-                } else {
-                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
+                // Apply necessary flags for VLC return behavior
+                addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
             }
 
             if (playerIntent.resolveActivity(packageManager) != null) {
@@ -123,7 +122,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         } catch (e: Exception) {
-            // Handle exceptions gracefully if the player fails to launch
+            // Handle player launch failures
+            e.printStackTrace()
         }
     }
 
@@ -142,10 +142,16 @@ class MainActivity : AppCompatActivity() {
     class VLCResultReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == "org.videolan.vlc.player.result") {
-                val position = intent.getLongExtra("extra_position", 0L)
-                val duration = intent.getLongExtra("extra_duration", 0L)
-                // Send the playback position back to Stremio via companion object
-                MainActivity.sendPlaybackPositionToStremio(context, position, duration)
+                val position = intent.getLongExtra("extra_position", 0L) // Position in ms
+                val duration = intent.getLongExtra("extra_duration", 0L) // Total duration in ms
+
+                // Send playback position back to Stremio
+                if (position > 0 && duration > 0) {
+                    MainActivity.sendPlaybackPositionToStremio(context, position, duration)
+                } else {
+                    // Fallback if VLC fails to provide values, use 0
+                    MainActivity.sendPlaybackPositionToStremio(context, 0L, duration)
+                }
             }
         }
     }
@@ -153,16 +159,20 @@ class MainActivity : AppCompatActivity() {
     companion object {
         fun sendPlaybackPositionToStremio(context: Context, position: Long, duration: Long) {
             try {
-                val returnIntent = Intent().apply {
-                    action = Intent.ACTION_VIEW
+                // Construct the correct URI with position and duration parameters
+                val returnIntent = Intent(Intent.ACTION_VIEW).apply {
                     data = Uri.parse("stremio://playback?position=$position&duration=$duration")
-                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    setPackage("com.stremio.one")  // Stremio package name
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
+
                 context.startActivity(returnIntent)
             } catch (e: Exception) {
-                // Handle any issues in sending position back to Stremio
+                // Handle potential issues in sending data to Stremio
+                e.printStackTrace()
             }
         }
     }
+
 
 }
