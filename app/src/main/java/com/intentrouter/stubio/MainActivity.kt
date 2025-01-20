@@ -1,4 +1,5 @@
 package com.intentrouter.stubio
+
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -137,6 +138,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     // VLC to return playback time position to Stremio
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        intent?.data?.let { incomingUri ->
+            // Handle the new intent data as needed
+        }
+    }
     override fun onDestroy() {
         super.onDestroy()
         unregisterReceiver(VLCResultReceiver())
