@@ -20,6 +20,45 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
+# Remove unused code and resources
+-dontshrink
+-dontoptimize
+-dontobfuscate
+
+# Keep application entry point
+-keep class com.intentrouter.stubio.** { *; }
+
+# Remove logging for production builds
+-assumenosideeffects class android.util.Log {
+    public static *;
+}
+
+# Optimize Kotlin-related code
+-keep class kotlin.** { *; }
+-keepclassmembers class kotlin.Metadata { *; }
+
+# Keep required support libraries
+-keep class androidx.** { *; }
+-keep class com.google.** { *; }
 -keep class androidx.lifecycle.** { *; }
 -keep class androidx.appcompat.** { *; }
 -keep class org.jetbrains.kotlin.** { *; }
+
+# Retain Parcelable implementations
+-keep class * implements android.os.Parcelable {
+    public static final android.os.Parcelable$Creator *;
+}
+
+# Keep serialization for JSON processing libraries
+-keepattributes Signature
+-keepattributes *Annotation*
+-keep class com.fasterxml.jackson.** { *; }
+-keep class com.google.gson.** { *; }
+
+## Remove debug information (optional)
+#-dontnote
+#-dontwarn
+#-optimizationpasses 5
+
+# Shrink native libraries
+-keep class * extends android.app.Application { *; }
