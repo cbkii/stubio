@@ -12,8 +12,8 @@ android {
         applicationId = "com.intentrouter.stubio"
         minSdk = 23
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0." + (System.currentTimeMillis() / 100000).toInt()  // User-facing version
+        versionCode = (System.currentTimeMillis() / 1000).toInt()    // Internal version, auto increment as timestamp
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

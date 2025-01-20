@@ -5,17 +5,16 @@
 
     <!-- Required permission for network access -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <!-- debug only:     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />    -->
 
     <!-- Ensure package visibility for app interactions -->
     <queries>
         <package android:name="com.teamsmart.videomanager.tv" />
         <package android:name="org.videolan.vlc" />
         <package android:name="com.google.android.youtube" />
-        <!-- fallback apps for future inclusion
-        <package android:name="com.liskovsoft.videomanager" />
+        <package android:name="com.stremio.one" />
+        <!-- apps for potential future inclusion as fallbacks
         <package android:name="com.mxtech.videoplayer.ad.tv" />
-        <package android:name="com.mxtech.videoplayer.ad" />
         <package android:name="com.mxtech.videoplayer.pro.tv" />
         <package android:name="org.xbmc.kodi" />
         -->
@@ -45,18 +44,6 @@
 
                 <!-- Handle Stremio deep links -->
                 <data android:scheme="stremio" android:host="playback" />
-
-<!--                &lt;!&ndash; Handle local Stremio server on localhost &ndash;&gt;-->
-<!--                <data android:scheme="http" android:host="127.0.0.1" android:pathPattern=".*" />-->
-<!--                <data android:scheme="http" android:host="localhost" android:pathPattern=".*" />-->
-<!--                &lt;!&ndash; Handle common local network IP addresses for Stremio servers &ndash;&gt;-->
-<!--                <data android:scheme="http" android:host="192.168.1.1" android:pathPattern=".*" />-->
-<!--                <data android:scheme="http" android:host="192.168.1.100" android:pathPattern=".*" />-->
-<!--                <data android:scheme="http" android:host="192.168.0.1" android:pathPattern=".*" />-->
-<!--                <data android:scheme="http" android:host="192.168.0.100" android:pathPattern=".*" />-->
-<!--                &lt;!&ndash; Handle common domain patterns for Stremio servers &ndash;&gt;-->
-<!--                <data android:scheme="http" android:host="*.stremio.com" android:pathPattern=".*" />-->
-<!--                <data android:scheme="http" android:host="*.strem.io" android:pathPattern=".*" />-->
 
                 <!-- General HTTP and HTTPS links -->
                 <data android:scheme="http" />
