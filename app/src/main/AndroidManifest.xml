@@ -29,7 +29,6 @@
         android:fullBackupContent="@xml/backup_rules"
         android:theme="@style/Theme.Transparent"
         android:usesCleartextTraffic="true"
-        android:debuggable="true"
         android:process=":stubio"
         tools:targetApi="31">
 

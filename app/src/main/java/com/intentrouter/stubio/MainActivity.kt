@@ -48,7 +48,7 @@ class MainActivity : AppCompatActivity() {
     // Determines which media player to launch based on the incoming URI
     private fun routeUri(uri: Uri, intent: Intent) {
 
-        val youtubeRegex = "(?:/yt/|/|\\?|=|&|\\b)([a-zA-Z0-9_-]{11})(?:\\b|/|\\?|&|#|$)".toRegex()
+        val youtubeRegex = """(?:/yt/|[/?=&])([a-zA-Z0-9_-]{11})(?=[/?&=#]|$)""".toRegex()
         val matchResult = youtubeRegex.find(uri.toString())
 
         if (matchResult != null) {
@@ -139,27 +139,30 @@ class MainActivity : AppCompatActivity() {
         unregisterReceiver(VLCResultReceiver())
     }
     // BroadcastReceiver to receive playback position from VLC
-    private inner class VLCResultReceiver : BroadcastReceiver() {
+    class VLCResultReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == "org.videolan.vlc.player.result") {
                 val position = intent.getLongExtra("extra_position", 0L)
                 val duration = intent.getLongExtra("extra_duration", 0L)
-                // Send the playback position back to Stremio
-                sendPlaybackPositionToStremio(position, duration)
+                // Send the playback position back to Stremio via companion object
+                MainActivity.sendPlaybackPositionToStremio(context, position, duration)
             }
         }
     }
     // Function to relay the playback position back to Stremio
-    private fun sendPlaybackPositionToStremio(position: Long, duration: Long) {
-        try {
-            val returnIntent = Intent().apply {
-                action = Intent.ACTION_VIEW
-                data = Uri.parse("stremio://playback?position=$position&duration=$duration")
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    companion object {
+        fun sendPlaybackPositionToStremio(context: Context, position: Long, duration: Long) {
+            try {
+                val returnIntent = Intent().apply {
+                    action = Intent.ACTION_VIEW
+                    data = Uri.parse("stremio://playback?position=$position&duration=$duration")
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                }
+                context.startActivity(returnIntent)
+            } catch (e: Exception) {
+                // Handle any issues in sending position back to Stremio
             }
-            startActivity(returnIntent)
-        } catch (e: Exception) {
-            // Handle any issues in sending position back to Stremio
         }
     }
+
 }
