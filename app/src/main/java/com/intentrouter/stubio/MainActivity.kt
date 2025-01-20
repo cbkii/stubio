@@ -1,6 +1,8 @@
 package com.intentrouter.stubio
-
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
@@ -33,6 +35,10 @@ class MainActivity : AppCompatActivity() {
         if (incomingUri != null) {
             routeUri(incomingUri, incomingIntent)
         }
+
+        // Register BroadcastReceiver to receive playback position from VLC
+        val filter = IntentFilter("org.videolan.vlc.player.result")
+        registerReceiver(VLCResultReceiver(), filter)
 
         // Close activity after processing the intent
         finish()
@@ -104,19 +110,15 @@ class MainActivity : AppCompatActivity() {
 
                 // Ensure "startfrom" is set, default to 0 if missing
                 putExtra("startfrom", extras.getInt("startfrom", 0))
-
                 // Ensure "position" is set, default to 0 if missing
                 putExtra("position", extras.getInt("position", 0))
-
                 // Ensure "return_result" is set, default to true if missing
                 putExtra("return_result", extras.getBoolean("return_result", true))
 
                 // Apply flags to maintain behavior given stub app intermediary
                 if (originalIntent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT != 0) {
-                    // Use forward result when Stremio expects a response
                     addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
                 } else {
-                    // Otherwise, launch as a new task
                     addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
             }
@@ -133,4 +135,35 @@ class MainActivity : AppCompatActivity() {
             // Handle exceptions gracefully if the player fails to launch
         }
     }
+
+    // VLC to return playback time position to Stremio
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(VLCResultReceiver())
+    }
+    // BroadcastReceiver to receive playback position from VLC
+    private inner class VLCResultReceiver : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == "org.videolan.vlc.player.result") {
+                val position = intent.getLongExtra("extra_position", 0L)
+                val duration = intent.getLongExtra("extra_duration", 0L)
+                // Send the playback position back to Stremio
+                sendPlaybackPositionToStremio(position, duration)
+            }
+        }
+    }
+    // Function to relay the playback position back to Stremio
+    private fun sendPlaybackPositionToStremio(position: Long, duration: Long) {
+        try {
+            val returnIntent = Intent().apply {
+                action = Intent.ACTION_VIEW
+                data = Uri.parse("stremio://playback?position=$position&duration=$duration")
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            startActivity(returnIntent)
+        } catch (e: Exception) {
+            // Handle any issues in sending position back to Stremio
+        }
+    }
+
 }
