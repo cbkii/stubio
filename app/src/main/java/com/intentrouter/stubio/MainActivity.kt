@@ -1,0 +1,136 @@
+package com.intentrouter.stubio
+
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import androidx.appcompat.app.AppCompatActivity
+
+class MainActivity : AppCompatActivity() {
+
+    private val pkgYT: String by lazy {
+        if (packageManager.getLaunchIntentForPackage("com.teamsmart.videomanager.tv") != null) {
+            "com.teamsmart.videomanager.tv"
+        } else {
+            "com.google.android.youtube"
+        }
+    }
+
+    private val pkgP2P: String by lazy {
+        if (packageManager.getLaunchIntentForPackage("org.videolan.vlc") != null) {
+            "org.videolan.vlc"
+        } else {
+            "com.mxtech.videoplayer.ad"
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        val incomingIntent = intent
+        val incomingUri: Uri? = incomingIntent.data
+
+        // Process the incoming URI if it's not null
+        if (incomingUri != null) {
+            routeUri(incomingUri, incomingIntent)
+        }
+
+        // Close activity after processing the intent
+        finish()
+    }
+
+    // Determines which media player to launch based on the incoming URI
+    private fun routeUri(uri: Uri, intent: Intent) {
+        val pathSegments = uri.pathSegments
+
+        if (uri.host == "127.0.0.1" && pathSegments.isNotEmpty()) {
+            when (pathSegments[0]) {
+                "yt" -> {
+                    // Launch SmartTubeNext with the extracted YouTube video URL
+                    if (pathSegments.size > 1) {
+                        val youtubeId = pathSegments[1]
+                        val youtubeUrl = "https://www.youtube.com/watch?v=$youtubeId"
+                        launchWithYTapp(youtubeUrl)
+                    }
+                }
+                else -> {
+                    // Handle Torrentio video streams via VLC/MX
+                    launchWithStreamApp(intent)
+                }
+            }
+        } else {
+            // Default action to launch VLC/MX with the full original intent
+            launchWithStreamApp(intent)
+        }
+    }
+
+    // Prepares and launches SmartTubeNext with a given YouTube URL
+    private fun launchWithYTapp(youtubeUrl: String) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse(youtubeUrl)
+                setPackage(pkgYT)
+
+                // Check if the stub app was started with FLAG_ACTIVITY_FORWARD_RESULT
+                if (intent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT != 0) {
+                    // If Stremio expects a result, forward it back and maintain stack order
+                    addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
+                } else {
+                    // Otherwise, launch SmartTubeNext as an independent task
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+
+                // Ensure return result extra is set correctly
+                putExtra("return_result", true)
+            }
+
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+            }
+
+        } catch (e: Exception) {
+            // Handle exceptions related to launching SmartTubeNext
+        }
+    }
+
+    // Prepares and launches VLC or MX Player with the full original intent and extras
+    private fun launchWithStreamApp(originalIntent: Intent) {
+        try {
+            val playerIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(originalIntent.data, "video/*")
+                setPackage(pkgP2P)
+                putExtras(originalIntent.extras ?: Bundle())
+                // Transfer essential extras, setting default values if they don't exist
+                val extras = originalIntent.extras ?: Bundle()
+
+                // Ensure "startfrom" is set, default to 0 if missing
+                putExtra("startfrom", extras.getInt("startfrom", 0))
+
+                // Ensure "position" is set, default to 0 if missing
+                putExtra("position", extras.getInt("position", 0))
+
+                // Ensure "return_result" is set, default to true if missing
+                putExtra("return_result", extras.getBoolean("return_result", true))
+
+                // Apply flags to maintain behavior given stub app intermediary
+                if (originalIntent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT != 0) {
+                    // Use forward result when Stremio expects a response
+                    addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
+                } else {
+                    // Otherwise, launch as a new task
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+
+            if (playerIntent.resolveActivity(packageManager) != null) {
+                startActivity(playerIntent)
+            } else {
+                playerIntent.setPackage("com.mxtech.videoplayer.ad")
+                if (playerIntent.resolveActivity(packageManager) != null) {
+                    startActivity(playerIntent)
+                }
+            }
+        } catch (e: Exception) {
+            // Handle exceptions gracefully if the player fails to launch
+        }
+    }
+}
