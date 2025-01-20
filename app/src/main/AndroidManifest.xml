@@ -5,16 +5,20 @@
 
     <!-- Required permission for network access -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
     <!-- Ensure package visibility for app interactions -->
     <queries>
-        <package android:name="com.liskovsoft.videomanager" />
+        <package android:name="com.teamsmart.videomanager.tv" />
         <package android:name="org.videolan.vlc" />
         <package android:name="com.google.android.youtube" />
+        <!-- fallback apps for future inclusion
+        <package android:name="com.liskovsoft.videomanager" />
         <package android:name="com.mxtech.videoplayer.ad.tv" />
         <package android:name="com.mxtech.videoplayer.ad" />
         <package android:name="com.mxtech.videoplayer.pro.tv" />
         <package android:name="org.xbmc.kodi" />
+        -->
     </queries>
 
     <application
@@ -25,35 +29,55 @@
         android:fullBackupContent="@xml/backup_rules"
         android:theme="@style/Theme.Transparent"
         android:usesCleartextTraffic="true"
+        android:debuggable="true"
+        android:process=":stubio"
         tools:targetApi="31">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.Transparent">
 
-            <intent-filter android:autoVerify="false" >
+            <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
 
-                <!-- Specific handling for local Stremio (127.0.0.1) URLs -->
+                <!-- Handle Stremio deep links -->
+                <data android:scheme="stremio" android:host="playback" />
+
+                <!-- Handle local Stremio server on localhost -->
                 <data android:scheme="http" android:host="127.0.0.1" android:pathPattern=".*" />
+                <data android:scheme="http" android:host="localhost" android:pathPattern=".*" />
+                <!-- Handle common local network IP addresses for Stremio servers -->
+                <data android:scheme="http" android:host="192.168.1.1" android:pathPattern=".*" />
+                <data android:scheme="http" android:host="192.168.1.100" android:pathPattern=".*" />
+                <data android:scheme="http" android:host="192.168.0.1" android:pathPattern=".*" />
+                <data android:scheme="http" android:host="192.168.0.100" android:pathPattern=".*" />
+                <!-- Handle common domain patterns for Stremio servers -->
+                <data android:scheme="http" android:host="*.stremio.com" android:pathPattern=".*" />
+                <data android:scheme="http" android:host="*.strem.io" android:pathPattern=".*" />
 
                 <!-- General HTTP and HTTPS links -->
                 <data android:scheme="http" />
                 <data android:scheme="https" />
 
-                <!-- Handle video file extensions (e.g., MP4, MKV, etc.) -->
+                <!-- Handle video file extensions -->
                 <data android:mimeType="video/*" />
 
                 <!-- Handle media URIs for local and content-based files -->
                 <data android:scheme="content" />
                 <data android:scheme="file" />
-
             </intent-filter>
 
         </activity>
+
+        <receiver android:name=".MainActivity$VLCResultReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="org.videolan.vlc.player.result"/>
+            </intent-filter>
+        </receiver>
 
     </application>
 

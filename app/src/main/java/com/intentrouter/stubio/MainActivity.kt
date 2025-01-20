@@ -48,19 +48,29 @@ class MainActivity : AppCompatActivity() {
     // Determines which media player to launch based on the incoming URI
     private fun routeUri(uri: Uri, intent: Intent) {
         val pathSegments = uri.pathSegments
+        val host = uri.host
 
-        if (uri.host == "127.0.0.1" && pathSegments.isNotEmpty()) {
-            when (pathSegments[0]) {
-                "yt" -> {
-                    // Launch SmartTubeNext with the extracted YouTube video URL
-                    if (pathSegments.size > 1) {
-                        val youtubeId = pathSegments[1]
-                        val youtubeUrl = "https://www.youtube.com/watch?v=$youtubeId"
-                        launchWithYTapp(youtubeUrl)
+        if (host != null && pathSegments.isNotEmpty()) {
+            when {
+                host == "127.0.0.1" || host == "localhost" ||
+                        host.startsWith("192.168.") || host.endsWith(".stremio.com") || host.endsWith(".strem.io") -> {
+                    when (pathSegments[0]) {
+                        "yt" -> {
+                            // Launch SmartTubeNext with the extracted YouTube video URL
+                            if (pathSegments.size > 1) {
+                                val youtubeId = pathSegments[1]
+                                val youtubeUrl = "https://www.youtube.com/watch?v=$youtubeId"
+                                launchWithYTapp(youtubeUrl)
+                            }
+                        }
+                        else -> {
+                            // Handle Torrentio video streams via VLC/MX
+                            launchWithStreamApp(intent)
+                        }
                     }
                 }
                 else -> {
-                    // Handle Torrentio video streams via VLC/MX
+                    // Default action to launch VLC/MX with the full original intent
                     launchWithStreamApp(intent)
                 }
             }
