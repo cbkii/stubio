@@ -5,6 +5,8 @@
 
     <!-- Required permission for network access -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <!-- debug only:     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />    -->
 
     <!-- Ensure package visibility for app interactions -->
@@ -66,10 +68,16 @@
             </intent-filter>
 
         </activity>
-
+        <!-- Declare VLC return playback position to Stremio -->
         <receiver android:name=".MainActivity$VLCResultReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="org.videolan.vlc.player.result"/>
+            </intent-filter>
+        </receiver>
+        <!-- Declare User custom settings-->
+        <receiver android:name=".ServerConfigReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="com.intentrouter.stubio.SET_SERVER"/>
             </intent-filter>
         </receiver>
 
