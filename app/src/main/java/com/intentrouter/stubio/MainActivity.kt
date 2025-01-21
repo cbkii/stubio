@@ -1,28 +1,36 @@
 package com.intentrouter.stubio
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
+import android.os.IBinder
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationCompat
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.*
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var vlcResultLauncher: ActivityResultLauncher<Intent>
-    private val handler = Handler(Looper.getMainLooper())
+    private val coroutineScope = CoroutineScope(Dispatchers.Main.immediate)
 
     // Runnable to periodically check playback position and send it to Stremio
-    private val positionRunnable = object : Runnable {
-        override fun run() {
+    private fun monitorPlaybackPosition() = lifecycleScope.launch(Dispatchers.IO) {
+        while (isActive) {
             val currentPosition = getCurrentPlaybackPosition()
-            sendPlaybackPositionToStremio(this@MainActivity, currentPosition, 0L)
-            handler.postDelayed(this, 10000) // 10 seconds loop
+            withContext(Dispatchers.Main) {
+                sendPlaybackPositionToStremio(this@MainActivity, currentPosition, 0L)
+            }
+            delay(10000L) // Poll every 10 seconds
         }
     }
 
@@ -44,32 +52,45 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        handler.post(positionRunnable)
+
+        lifecycleScope.launch {
+            monitorPlaybackPosition()
+        }
+
+        // Keep alive as foreground service, prevent aggressive Android10+ app kill
+        startForegroundService(Intent(this, PlaybackForegroundService::class.java))
+        // Stream playback position return handler
+        monitorPlaybackPosition()
 
         // Load Stremio server URL from SharedPreferences (Default stored in res/xml/stubio_user_settings.xml)
         val sharedPref = getSharedPreferences("StubioPrefs", Context.MODE_PRIVATE)
         // Apply default values if not already set
-        androidx.preference.PreferenceManager.setDefaultValues(this, R.xml.stubio_user_settings, false)
+        androidx.preference.PreferenceManager.setDefaultValues(
+            this,
+            R.xml.stubio_user_settings,
+            false
+        )
 
         val stremioServer = sharedPref.getString("stremio_server_ip", "127.0.0.1")
         // Potential future routing usage: val stremioUrl = "http://$stremioServer/stream"
 
         // Register broadcast receiver for ADB/Tasker updates:
-            // $ adb shell am broadcast -a com.intentrouter.stubio.SET_SERVER --es server_ip "192.168.1.100"
-            // Tasker>System>SendIntent: Action: com.intentrouter.stubio.SET_SERVER, Extra: server_ip:192.168.1.100
+        // $ adb shell am broadcast -a com.intentrouter.stubio.SET_SERVER --es server_ip "192.168.1.100"
+        // Tasker>System>SendIntent: Action: com.intentrouter.stubio.SET_SERVER, Extra: server_ip:192.168.1.100
         val filter = IntentFilter("com.intentrouter.stubio.SET_SERVER")
         registerReceiver(ServerConfigReceiver(), filter)
 
         // Setup playback position parser
-        vlcResultLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == RESULT_OK) {
-                result.data?.let { data ->
-                    val position = data.getLongExtra("extra_position", 0L)
-                    val duration = data.getLongExtra("extra_duration", 0L)
-                    sendPlaybackPositionToStremio(this, position, duration)
+        vlcResultLauncher =
+            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                if (result.resultCode == RESULT_OK) {
+                    result.data?.let { data ->
+                        val position = data.getLongExtra("extra_position", 0L)
+                        val duration = data.getLongExtra("extra_duration", 0L)
+                        sendPlaybackPositionToStremio(this, position, duration)
+                    }
                 }
             }
-        }
 
         val incomingIntent = intent
         val incomingUri: Uri? = incomingIntent.data
@@ -78,28 +99,30 @@ class MainActivity : AppCompatActivity() {
             routeUri(incomingUri, incomingIntent)
         }
 
-        val filter = IntentFilter("org.videolan.vlc.player.result")
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(VLCResultReceiver(), filter, Context.RECEIVER_NOT_EXPORTED)
+        val filterv = IntentFilter("org.videolan.vlc.player.result")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(VLCResultReceiver(), filterv, Context.RECEIVER_NOT_EXPORTED)
         } else {
-            registerReceiver(VLCResultReceiver(), filter)
+            registerReceiver(VLCResultReceiver(), filterv)
         }
 
         finish()
     }
+
     // Determines which media player to launch based on parsed incoming URI
     private fun routeUri(uri: Uri, intent: Intent) {
-        val youtubeRegex = """(?:/yt/|[/?=&])([a-zA-Z0-9_-]{11})(?=[/?&=#]|\$)""".toRegex()
+        val youtubeRegex = """(?:/yt/|[/?=&])([a-zA-Z0-9_-]{11})(?=[/?&=#]|$)""".toRegex()
         val matchResult = youtubeRegex.find(uri.toString())
 
         if (matchResult != null) {
             val youtubeId = matchResult.groupValues[1]
-            val youtubeUrl = "https://www.youtube.com/watch?v=\$youtubeId"
+            val youtubeUrl = "https://www.youtube.com/watch?v=$youtubeId"
             launchWithYTapp(youtubeUrl)
         } else {
             launchWithStreamApp(intent)
         }
     }
+
     // Prepares and launches SmartTubeNext with a given YouTube URL
     private fun launchWithYTapp(youtubeUrl: String) {
         try {
@@ -121,6 +144,7 @@ class MainActivity : AppCompatActivity() {
             e.printStackTrace()
         }
     }
+
     // Prepares and launches VLC or MX Player with the full original intent and extras
     private fun launchWithStreamApp(originalIntent: Intent) {
         try {
@@ -150,12 +174,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // BroadcastReceiver to receive playback position from VLC
     override fun onDestroy() {
         super.onDestroy()
-        handler.removeCallbacks(positionRunnable)
+        coroutineScope.cancel()
         unregisterReceiver(VLCResultReceiver())
     }
-    // BroadcastReceiver to receive playback position from VLC
+
     class VLCResultReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == "org.videolan.vlc.player.result") {
@@ -165,12 +190,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
     // Function to relay the playback position back to Stremio [com.stremio.one]
     companion object {
         fun sendPlaybackPositionToStremio(context: Context, position: Long, duration: Long) {
             try {
                 val returnIntent = Intent(Intent.ACTION_VIEW).apply {
-                    data = Uri.parse("stremio://playback?position=\$position&duration=\$duration")
+                    data = Uri.parse("stremio://playback?position=$position&duration=$duration")
                     setPackage("com.stremio.one")
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
@@ -180,6 +206,46 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    private fun getCurrentPlaybackPosition(): Long {
+        return 0L
+    }
+
+    class PlaybackForegroundService : Service() {
+        override fun onCreate() {
+            super.onCreate()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                createNotificationChannel()
+            }
+
+            val notification =
+                NotificationCompat.Builder(this@PlaybackForegroundService, "STUBIO_CHANNEL")
+                    .setContentTitle("Stubio Service")
+                    .setContentText("Playback position handler")
+                    .setSmallIcon(R.drawable.ic_notification)
+                    .build()
+
+            startForeground(1, notification)
+        }
+
+        override fun onBind(intent: Intent?): IBinder? = null
+
+        override fun onDestroy() {
+            stopForeground(true)
+            super.onDestroy()
+        }
+
+        private fun createNotificationChannel() {
+            val channel = NotificationChannel(
+                "STUBIO_CHANNEL",
+                "Playback Position Service for Stremio",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.createNotificationChannel(channel)
+        }
+    }
+
     // Update domain/IP with user configured Stremio server address
     class ServerConfigReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -188,9 +254,5 @@ class MainActivity : AppCompatActivity() {
             sharedPref.edit().putString("stremio_server_ip", serverIp).apply()
             // Log.d("Stubio", "Stremio server IP updated to: $serverIp")
         }
-    }
-
-    private fun getCurrentPlaybackPosition(): Long {
-        return 0L
     }
 }
