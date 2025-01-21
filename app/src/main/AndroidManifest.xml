@@ -42,28 +42,25 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
 
-                <!-- Handle Stremio deep links -->
-                <data android:scheme="stremio" android:host="playback" />
-                <!-- Handle local Stremio server on localhost -->
-                <data android:scheme="http" android:host="127.0.0.1" android:pathPattern=".*" />
-                <data android:scheme="http" android:host="localhost" android:pathPattern=".*" />
-                <!-- Handle common local network IP addresses for Stremio servers -->
-                <data android:scheme="http" android:host="192.168.1.1" android:pathPattern=".*" />
-                <data android:scheme="http" android:host="192.168.1.100" android:pathPattern=".*" />
-                <data android:scheme="http" android:host="192.168.0.1" android:pathPattern=".*" />
-                <data android:scheme="http" android:host="192.168.0.100" android:pathPattern=".*" />
-                <!-- Handle common domain patterns for Stremio servers -->
-                <data android:scheme="http" android:host="*.stremio.com" android:pathPattern=".*" />
-                <data android:scheme="http" android:host="*.strem.io" android:pathPattern=".*" />
-
                 <!-- General HTTP and HTTPS links -->
                 <data android:scheme="http" />
                 <data android:scheme="https" />
-
-                <!-- Handle video file extensions -->
+                <!-- Handle Stremio deep links -->
+                <data android:scheme="stremio" />
+                <data android:host="playback" />
+                <!-- Handle common domain and IP addresses for Stremio servers -->
+                <data android:host="127.0.0.1" />
+                <data android:host="localhost" />
+                <data android:host="192.168.1.1" />
+                <data android:host="192.168.1.100" />
+                <data android:host="192.168.0.1" />
+                <data android:host="192.168.0.100" />
+                <data android:host="*.stremio.com" />
+                <data android:host="*.strem.io" />
+                <!-- Handle any path for parsing/routing -->
+                <data android:pathPattern=".*" />
+                <!-- Handle video file extensions, media URIs for local and content-based files -->
                 <data android:mimeType="video/*" />
-
-                <!-- Handle media URIs for local and content-based files -->
                 <data android:scheme="content" />
                 <data android:scheme="file" />
             </intent-filter>

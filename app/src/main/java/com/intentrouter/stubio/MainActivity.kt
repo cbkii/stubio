@@ -6,11 +6,13 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
+
+    private lateinit var vlcResultLauncher: ActivityResultLauncher<Intent>
 
     private val pkgYT: String by lazy {
         if (packageManager.getLaunchIntentForPackage("com.teamsmart.videomanager.tv") != null) {
@@ -31,28 +33,31 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        vlcResultLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == RESULT_OK) {
+                result.data?.let { data ->
+                    val position = data.getLongExtra("extra_position", 0L)
+                    val duration = data.getLongExtra("extra_duration", 0L)
+                    sendPlaybackPositionToStremio(this, position, duration)
+                }
+            }
+        }
+
         val incomingIntent = intent
         val incomingUri: Uri? = incomingIntent.data
 
-        // Process the incoming URI if it's not null
         if (incomingUri != null) {
             routeUri(incomingUri, incomingIntent)
         }
 
-        // Register BroadcastReceiver to receive playback position from VLC
         val filter = IntentFilter("org.videolan.vlc.player.result")
         registerReceiver(VLCResultReceiver(), filter)
 
-        // Close activity after processing the intent
-        // Small delay before finish to ensure proper handling
-        Handler(Looper.getMainLooper()).postDelayed({
-            finish()
-        }, 1000)
+        finish()
     }
 
-    // Determines which media player to launch based on the incoming URI
+    // Determines which media player to launch based on parsed incoming URI
     private fun routeUri(uri: Uri, intent: Intent) {
-
         val youtubeRegex = """(?:/yt/|[/?=&])([a-zA-Z0-9_-]{11})(?=[/?&=#]|$)""".toRegex()
         val matchResult = youtubeRegex.find(uri.toString())
 
@@ -64,76 +69,54 @@ class MainActivity : AppCompatActivity() {
             launchWithStreamApp(intent)
         }
     }
-
     // Prepares and launches SmartTubeNext with a given YouTube URL
     private fun launchWithYTapp(youtubeUrl: String) {
         try {
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 data = Uri.parse(youtubeUrl)
                 setPackage(pkgYT)
-
-                // Check if the stub app was started with FLAG_ACTIVITY_FORWARD_RESULT
+                // Check if Stubio was started with FORWARD_RESULT, else launch independent
                 if (intent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT != 0) {
-                    // If Stremio expects a result, forward it back and maintain stack order
                     addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
                 } else {
-                    // Otherwise, launch SmartTubeNext as an independent task
                     addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-
-                // Ensure return result extra is set correctly
                 putExtra("return_result", true)
             }
-
             if (intent.resolveActivity(packageManager) != null) {
                 startActivity(intent)
             }
-
         } catch (e: Exception) {
-            // Handle exceptions related to launching SmartTubeNext
+            e.printStackTrace()
         }
     }
-
     // Prepares and launches VLC or MX Player with the full original intent and extras
     private fun launchWithStreamApp(originalIntent: Intent) {
         try {
             val playerIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(originalIntent.data, "video/*")
                 setPackage(pkgP2P)
-
-                // Pass through original intent extras
                 putExtras(originalIntent.extras ?: Bundle())
-
-                // Ensure essential extras exist
                 putExtra("startfrom", originalIntent.getIntExtra("startfrom", 0))
                 putExtra("position", originalIntent.getIntExtra("position", 0))
                 putExtra("return_result", true)
-
-                // Apply necessary flags for VLC return behavior
-                addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
+                // Note // Test these and other flags until behaviour is consistent with SoR
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
 
             if (playerIntent.resolveActivity(packageManager) != null) {
-                startActivity(playerIntent)
+                vlcResultLauncher.launch(playerIntent)
             } else {
                 playerIntent.setPackage("com.mxtech.videoplayer.ad")
                 if (playerIntent.resolveActivity(packageManager) != null) {
-                    startActivity(playerIntent)
+                    vlcResultLauncher.launch(playerIntent)
                 }
             }
         } catch (e: Exception) {
-            // Handle player launch failures
             e.printStackTrace()
         }
     }
 
-    // VLC to return playback time position to Stremio
-    override fun onNewIntent(intent: Intent?) {
-        super.onNewIntent(intent)
-        intent?.data?.let { incomingUri ->
-            // Handle the new intent data as needed
-        }
-    }
     override fun onDestroy() {
         super.onDestroy()
         unregisterReceiver(VLCResultReceiver())
@@ -142,37 +125,25 @@ class MainActivity : AppCompatActivity() {
     class VLCResultReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == "org.videolan.vlc.player.result") {
-                val position = intent.getLongExtra("extra_position", 0L) // Position in ms
-                val duration = intent.getLongExtra("extra_duration", 0L) // Total duration in ms
-
-                // Send playback position back to Stremio
-                if (position > 0 && duration > 0) {
-                    MainActivity.sendPlaybackPositionToStremio(context, position, duration)
-                } else {
-                    // Fallback if VLC fails to provide values, use 0
-                    MainActivity.sendPlaybackPositionToStremio(context, 0L, duration)
-                }
+                val position = intent.getLongExtra("extra_position", 0L)
+                val duration = intent.getLongExtra("extra_duration", 0L)
+                sendPlaybackPositionToStremio(context, position, duration)
             }
         }
     }
-    // Function to relay the playback position back to Stremio
+    // Function to relay the playback position back to Stremio [com.stremio.one]
     companion object {
         fun sendPlaybackPositionToStremio(context: Context, position: Long, duration: Long) {
             try {
-                // Construct the correct URI with position and duration parameters
                 val returnIntent = Intent(Intent.ACTION_VIEW).apply {
                     data = Uri.parse("stremio://playback?position=$position&duration=$duration")
-                    setPackage("com.stremio.one")  // Stremio package name
+                    setPackage("com.stremio.one")
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
-
                 context.startActivity(returnIntent)
             } catch (e: Exception) {
-                // Handle potential issues in sending data to Stremio
                 e.printStackTrace()
             }
         }
     }
-
-
 }
