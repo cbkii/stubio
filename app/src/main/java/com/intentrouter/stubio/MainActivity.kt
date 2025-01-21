@@ -1,6 +1,5 @@
 package com.intentrouter.stubio
 
-import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -18,7 +17,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -29,7 +27,7 @@ import kotlinx.coroutines.withContext
 class MainActivity : AppCompatActivity() {
 
     private lateinit var vlcResultLauncher: ActivityResultLauncher<Intent>
-    private val coroutineScope = CoroutineScope(Dispatchers.Main.immediate)
+
 
     // Runnable to periodically check playback position and send it to Stremio
     private fun monitorPlaybackPosition() = lifecycleScope.launch(Dispatchers.IO) {
@@ -81,14 +79,15 @@ class MainActivity : AppCompatActivity() {
                     result.data?.let { data ->
                         val position = data.getLongExtra("extra_position", 0L)
                         val duration = data.getLongExtra("extra_duration", 0L)
+                        VLCResultReceiver.lastKnownPosition = position
                         sendPlaybackPositionToStremio(this, position, duration)
                     }
                 }
             }
 
-        // Set Incoming Intent, else end
         val incomingIntent = intent
         val incomingUri: Uri? = incomingIntent.data
+
         incomingUri?.host?.let { host ->
             if (isAllowedHost(host)) {
                 routeUri(incomingUri, incomingIntent)
@@ -97,12 +96,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val filter = IntentFilter("org.videolan.vlc.player.result")
+        val filterv = IntentFilter("org.videolan.vlc.player.result")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(VLCResultReceiver(), filter, Context.RECEIVER_NOT_EXPORTED)
+            registerReceiver(VLCResultReceiver(), filterv, Context.RECEIVER_NOT_EXPORTED)
         } else {
-            @Suppress("DEPRECATION")
-            registerReceiver(VLCResultReceiver(), filter)
+            registerReceiver(VLCResultReceiver(), filterv)
         }
 
         finish()
@@ -193,15 +191,20 @@ class MainActivity : AppCompatActivity() {
     // BroadcastReceiver to receive playback position from VLC
     override fun onDestroy() {
         super.onDestroy()
-        coroutineScope.cancel()
+        lifecycleScope.cancel()
         unregisterReceiver(VLCResultReceiver())
     }
 
     class VLCResultReceiver : BroadcastReceiver() {
+        companion object {
+            var lastKnownPosition: Long = 0L
+            fun fetchLastKnownPosition(): Long = lastKnownPosition
+        }
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == "org.videolan.vlc.player.result") {
                 val position = intent.getLongExtra("extra_position", 0L)
                 val duration = intent.getLongExtra("extra_duration", 0L)
+                lastKnownPosition = position
                 sendPlaybackPositionToStremio(context, position, duration)
             }
         }
@@ -224,7 +227,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getCurrentPlaybackPosition(): Long {
-        return 0L
+        return VLCResultReceiver.fetchLastKnownPosition()
     }
 
     class PlaybackForegroundService : Service() {
@@ -250,7 +253,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Function to create notification channel with fallback for API 23+
-        @SuppressLint("WrongConstant")
         private fun createNotificationChannel() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val channel = NotificationChannel(
