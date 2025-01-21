@@ -1,5 +1,7 @@
 package com.intentrouter.stubio
 
+import android.annotation.SuppressLint
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
@@ -16,7 +18,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
@@ -58,27 +66,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Keep alive as foreground service, prevent aggressive Android10+ app kill
-        startForegroundService(Intent(this, PlaybackForegroundService::class.java))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(Intent(this, PlaybackForegroundService::class.java))
+        } else {
+            startService(Intent(this, PlaybackForegroundService::class.java))
+        }
         // Stream playback position return handler
         monitorPlaybackPosition()
-
-        // Load Stremio server URL from SharedPreferences (Default stored in res/xml/stubio_user_settings.xml)
-        val sharedPref = getSharedPreferences("StubioPrefs", Context.MODE_PRIVATE)
-        // Apply default values if not already set
-        androidx.preference.PreferenceManager.setDefaultValues(
-            this,
-            R.xml.stubio_user_settings,
-            false
-        )
-
-        val stremioServer = sharedPref.getString("stremio_server_ip", "127.0.0.1")
-        // Potential future routing usage: val stremioUrl = "http://$stremioServer/stream"
-
-        // Register broadcast receiver for ADB/Tasker updates:
-        // $ adb shell am broadcast -a com.intentrouter.stubio.SET_SERVER --es server_ip "192.168.1.100"
-        // Tasker>System>SendIntent: Action: com.intentrouter.stubio.SET_SERVER, Extra: server_ip:192.168.1.100
-        val filter = IntentFilter("com.intentrouter.stubio.SET_SERVER")
-        registerReceiver(ServerConfigReceiver(), filter)
 
         // Setup playback position parser
         vlcResultLauncher =
@@ -92,21 +86,44 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+        // Set Incoming Intent, else end
         val incomingIntent = intent
         val incomingUri: Uri? = incomingIntent.data
-
-        if (incomingUri != null) {
-            routeUri(incomingUri, incomingIntent)
+        incomingUri?.host?.let { host ->
+            if (isAllowedHost(host)) {
+                routeUri(incomingUri, incomingIntent)
+            } else {
+                finish()
+            }
         }
 
-        val filterv = IntentFilter("org.videolan.vlc.player.result")
+        val filter = IntentFilter("org.videolan.vlc.player.result")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(VLCResultReceiver(), filterv, Context.RECEIVER_NOT_EXPORTED)
+            registerReceiver(VLCResultReceiver(), filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
-            registerReceiver(VLCResultReceiver(), filterv)
+            @Suppress("DEPRECATION")
+            registerReceiver(VLCResultReceiver(), filter)
         }
 
         finish()
+    }
+    // Parse and filter hosts dynamically to ensure they match valid hosts
+    private fun isAllowedHost(host: String?): Boolean {
+        val allowedHostPatterns = listOf(
+            "127\\.0\\.0\\.1",
+            "localhost",
+            "192\\.168\\.\\d{1,3}\\.\\d{1,3}",
+            "10\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}",
+            "172\\.16\\.\\d{1,3}\\.\\d{1,3}",
+            "172\\.31\\.\\d{1,3}\\.\\d{1,3}",
+            ".*\\.stremio\\.com",
+            ".*\\.strem\\.io"
+        )
+        return allowedHostPatterns.any { pattern -> host?.matches(pattern.toRegex()) == true } || host == getStoredStremioServer()
+    }
+    private fun getStoredStremioServer(): String? {
+        val sharedPref = getSharedPreferences("StubioPrefs", Context.MODE_PRIVATE)
+        return sharedPref.getString("stremio_server_ip", "127.0.0.1")
     }
 
     // Determines which media player to launch based on parsed incoming URI
@@ -160,7 +177,6 @@ class MainActivity : AppCompatActivity() {
                 // FLAG_GRANT_READ_URI_PERMISSION ensures Stubio can access content URIs shared by Stremio
                 // FLAG_ACTIVITY_NO_HISTORY prevents the activity from being stored in the recent tasks list
             }
-
             if (playerIntent.resolveActivity(packageManager) != null) {
                 vlcResultLauncher.launch(playerIntent)
             } else {
@@ -217,14 +233,12 @@ class MainActivity : AppCompatActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 createNotificationChannel()
             }
-
             val notification =
                 NotificationCompat.Builder(this@PlaybackForegroundService, "STUBIO_CHANNEL")
                     .setContentTitle("Stubio Service")
                     .setContentText("Playback position handler")
                     .setSmallIcon(R.drawable.ic_notification)
                     .build()
-
             startForeground(1, notification)
         }
 
@@ -235,15 +249,30 @@ class MainActivity : AppCompatActivity() {
             super.onDestroy()
         }
 
+        // Function to create notification channel with fallback for API 23+
+        @SuppressLint("WrongConstant")
         private fun createNotificationChannel() {
-            val channel = NotificationChannel(
-                "STUBIO_CHANNEL",
-                "Playback Position Service for Stremio",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    "STUBIO_CHANNEL",
+                    "Playback Position Service for Stremio",
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) NotificationManager.IMPORTANCE_LOW else Notification.PRIORITY_LOW
+                )
+                val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                manager.createNotificationChannel(channel)
+            } else {
+                // Fallback for Android 6 (API 23)
+                val notification = NotificationCompat.Builder(this, "STUBIO_CHANNEL")
+                    .setContentTitle("Stubio Service")
+                    .setContentText("Playback position handler")
+                    .setSmallIcon(R.drawable.ic_notification)
+                    .setPriority(NotificationCompat.PRIORITY_LOW)
+                    .build()
+                val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                manager.notify(1, notification)
+            }
         }
+
     }
 
     // Update domain/IP with user configured Stremio server address
