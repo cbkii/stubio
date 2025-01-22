@@ -4,16 +4,13 @@
    for details.
 -->
 <data-extraction-rules>
-    <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
-    </cloud-backup>
-    <!--
-    <device-transfer>
-        <include .../>
-        <exclude .../>
-    </device-transfer>
-    -->
+
+<!--
+TODO: Task :app:processReleaseMainManifest // package="com.intentrouter.stubio" found in source AndroidManifest.xml: C:\Users\kilma\AndroidStudioProjects\Stubio\app\src\main\AndroidManifest.xml
+        #!#!# Setting the namespace via the package attribute in the source AndroidManifest.xml is no longer supported, and the value is ignored.
+        Recommendation: remove package="com.intentrouter.stubio" from the source AndroidManifest.xml: C:\Users\kilma\AndroidStudioProjects\Stubio\app\src\main\AndroidManifest.xml.
+-->
+
+
 </data-extraction-rules>
+

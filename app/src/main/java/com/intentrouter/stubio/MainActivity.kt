@@ -150,8 +150,12 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 data = Uri.parse(youtubeUrl)
                 setPackage(pkgYT)
-                // Launch SmartTubeNext/YoutTube as an independent task
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                if (intent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT != 0) {
+                    addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
+                } else {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                }
+
                 // Ensure return result extra is set correctly
                 putExtra("return_result", true)
             }
@@ -173,16 +177,28 @@ class MainActivity : AppCompatActivity() {
                 putExtra("startfrom", originalIntent.getIntExtra("startfrom", 0))
                 putExtra("position", originalIntent.getIntExtra("position", 0))
                 putExtra("return_result", true)
-                // Fail-safe approach: always forward result, ensure a new task is created if not running yet
-                addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                if (intent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT != 0) {
+                    addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
+                } else {
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    // If SINGLE_TOP fails, use FLAG_ACTIVITY_CLEAR_TOP
+                }
             }
-            if (playerIntent.resolveActivity(packageManager) != null) {
-                vlcResultLauncher.launch(playerIntent)
+            // Checking for Available Media Player
+            val resolvedIntent = if (playerIntent.resolveActivity(packageManager) != null) {
+                playerIntent
             } else {
-                playerIntent.setPackage("com.mxtech.videoplayer.ad")
-                if (playerIntent.resolveActivity(packageManager) != null) {
-                    vlcResultLauncher.launch(playerIntent)
+                Intent(playerIntent).apply {
+                    setPackage("com.mxtech.videoplayer.ad")
+                }
+            }
+            // Choosing How to Launch the Media Player
+            if (resolvedIntent.resolveActivity(packageManager) != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    vlcResultLauncher.launch(resolvedIntent)
+                } else {
+                    // Fallback to traditional method below API 21
+                    startActivity(resolvedIntent)
                 }
             }
         } catch (e: Exception) {
