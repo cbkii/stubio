@@ -24,98 +24,35 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.properties.Delegates
+
+// Lifecycle
+// onCreate()	--->> 	Initialize variables, services, UI elements, and receivers.
+// onStart()	--->> 	Register broadcast receivers, start intent handling.
+// onResume()	--->> 	Start playback monitoring.
+// onPause()	--->> 	Pause playback monitoring if needed.
+// onStop()	    --->> 	Unregister broadcast receivers, stop services if needed.
+// onDestroy()	--->> 	Cleanup resources and release dependencies.
 
 // ---Section #1
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var streamResultLauncher: ActivityResultLauncher<Intent>
+    private val streamReceiver by lazy { StreamResultReceiver() }
     private var isStreamReceiverRegistered = false
     private var isMonitoringPlayback = false
-
-
-// ---Section #2
-
-    @SuppressLint("UnspecifiedRegisterReceiverFlag")
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        startMonitoringPlayback()
-
-        // Initialize the package names when the app starts
-        pkgYT = packageManager.getLaunchIntentForPackage("com.teamsmart.videomanager.tv")?.let {
-            "com.teamsmart.videomanager.tv"
-        } ?: "com.google.android.youtube"
-
-        pkgP2P = packageManager.getLaunchIntentForPackage("org.videolan.vlc")?.let {
-            "org.videolan.vlc"
-        } ?: "com.mxtech.videoplayer.ad"
-
-        // Keep the app alive using a foreground service to prevent Android10+ aggressive background app killing
-        val serviceIntent = Intent(this, PlaybackForegroundService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
-        } else {
-            startService(serviceIntent)
-        }
-
-        // Handle intent results from VLC or MX media players
-        streamResultLauncher =
-            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-                if (result.resultCode == RESULT_OK ||
-                    result.resultCode == Activity.RESULT_CANCELED ||
-                    result.resultCode == Activity.RESULT_FIRST_USER) {
-                    result.data?.let { data ->
-                        val playbackIntent = Intent().apply {
-                            action = Intent.ACTION_VIEW  // Most likely intent action for returning playback data
-                            if (pkgP2P.contains("vlc", ignoreCase = true)) {
-                                // VLC Player expected intent keys
-                                val position = data.getLongExtra("extra_position", -1L)
-                                val duration = data.getLongExtra("extra_duration", -1L)
-                                if (position >= 0 && duration > 0) {
-                                    StreamResultReceiver.lastKnownPosition = position
-                                    putExtra("extra_position", position)
-                                    putExtra("extra_duration", duration)
-                                }
-                            } else if (pkgP2P.contains("mx", ignoreCase = true)) {
-                                // MX Player expected intent keys
-                                val position = data.getLongExtra("position", -1L)
-                                val duration = data.getLongExtra("duration", -1L)
-                                if (position >= 0 && duration > 0) {
-                                    StreamResultReceiver.lastKnownPosition = position
-                                    putExtra("position", position)
-                                    putExtra("duration", duration)
-                                }
-                            }
-                        }
-//                        // Ensure valid intent before sending
-//                        if (playbackIntent.extras != null && playbackIntent.hasExtra("return_result")) {
-//                            sendBroadcast(playbackIntent)
-//                        }
-                    }
-                } else {
-                // Do nothing if the resultCode does not match expected values
-                }
-            }
-
-        registerStreamReceiver()
-
-        // Parse incoming intent URI to determine media routing
-        val incomingUri: Uri? = intent.data
-        incomingUri?.host?.let { host ->
-            if (isAllowedHost(host)) {
-                routeUri(incomingUri, intent)
-            } else {
-                finish()  // Terminate if the host is not allowed
-            }
-        }
-        // --Maybe unnecessary Call to finish(): Ensure that calling finish() immediately after intent processing doesn't prevent playback.
-        finish()
-    }
-
     companion object {
-        // Make package references globally accessible
+        // Make references globally accessible
+        const val yt1 = "com.teamsmart.videomanager.tv"
+        const val yt2 = "com.google.android.youtube"
+        const val tor1 = "org.videolan.vlc"
+        const val tor2 = "com.mxtech.videoplayer.ad"
         lateinit var pkgYT: String
         lateinit var pkgP2P: String
+        var isTor1 by Delegates.notNull<Boolean>()  // No default value, must be initialized
+        // var isTor1: Boolean = false  // Provide a safe default value
+        var cachedStremioServer: String? = "127.0.0.1"
 
         // Function to relay the playback position back to Stremio [com.stremio.one]
         fun sendPlaybackPositionToStremio(context: Context, position: Long, duration: Long) {
@@ -129,8 +66,103 @@ class MainActivity : AppCompatActivity() {
             }
             context.startActivity(intent)
         }
+
     }
 
+// ---Section #2
+
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        startMonitoringPlayback()
+        
+        // Initialize the package names when the app starts
+        pkgYT = packageManager.getLaunchIntentForPackage(Companion.yt1)?.let { Companion.yt1 } ?: yt2
+        pkgP2P = packageManager.getLaunchIntentForPackage( tor1 )?.let { tor1 } ?: tor2
+        isTor1 = (pkgP2P == tor1)
+
+
+
+        // Handle intent results from VLC or MX media players
+        streamResultLauncher =
+            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                if (result.resultCode == RESULT_OK ||
+                    result.resultCode == Activity.RESULT_CANCELED ||
+                    result.resultCode == Activity.RESULT_FIRST_USER) {
+                    result.data?.let { data ->
+                        val playbackIntent = Intent().apply {
+                            action = Intent.ACTION_VIEW  // Most likely intent action for returning playback data
+                            if (isTor1) {
+                                // VLC Player expected intent keys
+                                val position = data.getLongExtra("extra_position", -1L)
+                                val duration = data.getLongExtra("extra_duration", -1L)
+                                if (position >= 0 && duration > 0) {
+                                    StreamResultReceiver.lastKnownPosition = position
+                                    putExtra("extra_position", position)
+                                    putExtra("extra_duration", duration)
+                                }
+                            } else {
+                                // MX Player expected intent keys
+                                val position = data.getLongExtra("position", -1L)
+                                val duration = data.getLongExtra("duration", -1L)
+                                if (position >= 0 && duration > 0) {
+                                    StreamResultReceiver.lastKnownPosition = position
+                                    putExtra("position", position)
+                                    putExtra("duration", duration)
+                                }
+                            }
+                        }
+                        // Ensure valid intent before sending
+                        if (playbackIntent.extras != null && playbackIntent.hasExtra("return_result")) {
+                            sendBroadcast(playbackIntent)
+                        }
+                    }
+                } else {
+                // Do nothing if the resultCode does not match expected values
+                }
+            }
+        // --Maybe unnecessary Call to finish(): Ensure that calling finish() immediately after intent processing doesn't prevent playback.
+        finish()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        lifecycleScope.launch {
+            // Keep the app alive using a foreground service to prevent Android10+ aggressive background app killing
+            val serviceIntent = Intent(this, PlaybackForegroundService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+
+            // Parse incoming intent URI to determine media routing
+            val incomingUri: Uri? = intent.data
+            incomingUri?.host?.let { host ->
+                if (isAllowedHost(host)) {
+                    routeUri(incomingUri, intent)
+                    delay(333)  // Allow time for processing before launching the player
+                } else {
+                    delay(222)
+                    finish()  // Terminate host not allowed
+                }
+            }
+            delay(555)
+            finish()  // Only finish if data was handled
+        }
+
+        registerStreamReceiver()
+    }
+    // Ensure playback tracking starts only when the user is actively interacting with the app.
+    // Save resources when the activity goes into the background.
+    override fun onResume() {
+        super.onResume()
+        startMonitoringPlayback()
+    }
+    override fun onPause() {
+        super.onPause()
+        stopMonitoringPlayback()
+    }
 
     // Runnable to periodically check playback position and send it to Stremio
     private fun monitorPlaybackPosition() = lifecycleScope.launch(Dispatchers.IO) {
@@ -142,19 +174,7 @@ class MainActivity : AppCompatActivity() {
             delay(10000L) // Poll every 10 seconds
         }
     }
-    // Playback position monitoring
-    private fun startMonitoringPlayback() {
-        if (!isMonitoringPlayback) {
-            lifecycleScope.launch { monitorPlaybackPosition() }
-            isMonitoringPlayback = true
-        }
-    }
-    private fun stopMonitoringPlayback() {
-        if (isMonitoringPlayback) {
-            lifecycleScope.cancel()
-            isMonitoringPlayback = false
-        }
-    }
+
     private fun stopForegroundServiceIfNeeded() {
         if (!isMonitoringPlayback) {
             stopService(Intent(this, PlaybackForegroundService::class.java))
@@ -162,9 +182,7 @@ class MainActivity : AppCompatActivity() {
     }
 
 // ---Section #3
-
-    // Cache user config address
-    private var cachedStremioServer: String? = null
+    // Cache user config addressMinimise repeated I/O operations, ensures only one instance is used throughout
     private fun getStoredStremioServer(): String {
         return cachedStremioServer ?: run {
             val sharedPref = getSharedPreferences("StubioPrefs", Context.MODE_PRIVATE)
@@ -187,12 +205,7 @@ class MainActivity : AppCompatActivity() {
         val allowedHostPatterns = listOf(
             "127\\.0\\.0\\.1",
             "localhost",
-            "192\\.168\\.\\d{1,3}\\.\\d{1,3}",
-            "10\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}",
-            "172\\.16\\.\\d{1,3}\\.\\d{1,3}",
-            "172\\.31\\.\\d{1,3}\\.\\d{1,3}",
-            ".*\\.stremio\\.com",
-            ".*\\.strem\\.io"
+            "^(?:localhost|127\\.0\\.0\\.1|192\\.168\\.[0-9]+\\.[0-9]+|10\\.[0-9]+\\.[0-9]+\\.[0-9]+|172\\.(1[6-9]|2[0-9]|3[0-1])\\.[0-9]+\\.[0-9]+|[a-zA-Z0-9.-]+\\.stremio\\.com|[a-zA-Z0-9.-]+\\.strem\\.io)$"
         )
         return allowedHostPatterns.any { pattern -> host?.matches(pattern.toRegex()) == true }
                 || host == getStoredStremioServer()
@@ -228,16 +241,16 @@ class MainActivity : AppCompatActivity() {
             setPackage(pkgP2P)
             putExtras(originalIntent.extras ?: Bundle())
             // Add specific extras based on player type
-            if (pkgP2P.contains("vlc", ignoreCase = true)) {
+            if (isTor1) {
                 putExtra("extra_position", getCurrentPlaybackPosition())  // VLC expects 'extra_position'
                 putExtra("extra_duration", retrieveCachedPlaybackPosition())  // VLC expects 'extra_duration'
-            } else if (pkgP2P.contains("mx", ignoreCase = true)) {
+            } else {
                 putExtra("position", getCurrentPlaybackPosition())  // MX Player expects 'position'
                 putExtra("duration", retrieveCachedPlaybackPosition())  // MX Player expects 'duration'
             }
             putExtra("return_result", true)
             // Add intent flags based on player compatibility
-            if (pkgP2P.contains("vlc", ignoreCase = true)) {
+            if (isTor1) {
                 addFlags(
                             // addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
                     Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -245,15 +258,13 @@ class MainActivity : AppCompatActivity() {
                             Intent.FLAG_GRANT_READ_URI_PERMISSION or
                             Intent.FLAG_ACTIVITY_SINGLE_TOP
                 )
-            } else if (pkgP2P.contains("mx", ignoreCase = true)) {
+            } else {
                 addFlags(
                             // addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                             Intent.FLAG_ACTIVITY_FORWARD_RESULT or
                             Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
-            } else {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)  // Default fallback
             }
         }
         if (playerIntent.resolveActivity(packageManager) != null) {
@@ -265,19 +276,25 @@ class MainActivity : AppCompatActivity() {
     }
 
 // ---Section #4
+    override fun onStop() {
+        super.onStop()
+        if (isStreamReceiverRegistered) {
+            unregisterReceiver(streamReceiver)
+            isStreamReceiverRegistered = false
+        }
+        stopForegroundServiceIfNeeded()
+    }
 
     override fun onDestroy() {
         super.onDestroy()
         lifecycleScope.cancel()
-        if (isStreamReceiverRegistered) {
-            unregisterReceiver(StreamResultReceiver())
-            isStreamReceiverRegistered = false
-
-        }
         stopMonitoringPlayback()
-        stopForegroundServiceIfNeeded()
-        // add wait??
-        resetPlaybackPosition()
+        lifecycleScope.launch {
+            if (!intent.hasExtra("startfrom")) {
+                delay(2222)
+                resetPlaybackPosition()
+            }
+        }
     }
 
 
@@ -318,6 +335,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun registerStreamReceiver() {
         if (!isStreamReceiverRegistered) {
+            streamReceiver = StreamResultReceiver()
             val filter = IntentFilter().apply {
                 addAction("$pkgP2P.player.result")  // VLC compatibility
                 addAction("$pkgP2P.mxplayer.result")  // MX Player compatibility
@@ -365,9 +383,6 @@ class MainActivity : AppCompatActivity() {
 
         override fun onBind(intent: Intent?): IBinder? = null
 
-//        override fun onDestroy() {
-//            super.onDestroy()
-//        }
 
     }
 
