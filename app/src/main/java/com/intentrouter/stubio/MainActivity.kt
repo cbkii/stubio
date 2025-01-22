@@ -33,11 +33,13 @@ class MainActivity : AppCompatActivity() {
     private var streamReceiver: StreamResultReceiver? = null
     private var isStreamReceiverRegistered = false
     private var isMonitoringPlayback = false
+    private val REQUEST_CODE_PLAYBACK = 1001
 
 
-/* ************************************************ /
-// Companion Object Globals
-/ ************************************************ */
+
+    /* ************************************************ /
+    // Companion Object Globals
+    / ************************************************ */
 
     companion object {
         // Make references globally accessible
@@ -68,9 +70,9 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-/* ************************************************ /
-// Lifecycle Methods
-/ ************************************************ */
+    /* ************************************************ /
+    // Lifecycle Methods
+    / ************************************************ */
 
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
@@ -195,9 +197,9 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-/* ************************************************ /
-// Playback Monitoring
-/ ************************************************ */
+    /* ************************************************ /
+    // Playback Monitoring
+    / ************************************************ */
 
     // Runnable to periodically check playback position and send it to Stremio
     private var playbackMonitoringJob: Job? = null
@@ -210,11 +212,13 @@ class MainActivity : AppCompatActivity() {
             delay(10000L) // Poll every 10 seconds
         }
     }
+
     private fun startMonitoringPlayback() {
         if (playbackMonitoringJob == null || playbackMonitoringJob?.isCancelled == true) {
             playbackMonitoringJob = monitorPlaybackPosition()
         }
     }
+
     private fun stopMonitoringPlayback() {
         playbackMonitoringJob?.cancel()
         playbackMonitoringJob = null
@@ -224,15 +228,16 @@ class MainActivity : AppCompatActivity() {
         return StreamResultReceiver.fetchLastKnownPosition().takeIf { it > 0 }
             ?: retrieveCachedPlaybackPosition()
     }
+
     private fun retrieveCachedPlaybackPosition(): Long {
         val sharedPref = getSharedPreferences("StubioPrefs", Context.MODE_PRIVATE)
         return sharedPref.getLong("last_playback_position", 0L)
     }
 
 
-/* ************************************************ /
-// Intent Handling
-/ ************************************************ */
+    /* ************************************************ /
+    // Intent Handling
+    / ************************************************ */
 
 
     // Check whether the incoming URI host matches allowed patterns
@@ -259,7 +264,14 @@ class MainActivity : AppCompatActivity() {
     private fun launchWithYTapp(youtubeUrl: String) {
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(youtubeUrl)).apply {
             setPackage(pkgYT)
-            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+            // Check if the stub app was started with FLAG_ACTIVITY_FORWARD_RESULT
+            if (intent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT != 0) {
+                // If Stremio expects a result, forward it back and maintain stack order
+                addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
+            } else {
+                // Otherwise, launch SmartTubeNext as an independent task
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
             putExtra("return_result", true)
         }
         if (intent.resolveActivity(packageManager) != null) {
@@ -267,7 +279,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Launch VLC or MX Player with the parsed intent and extras
+    // Launch VLC/MX Player with parsed intent and extras, for return result
     private fun launchWithStreamApp(originalIntent: Intent) {
         val playerIntent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(originalIntent.data, "video/*")
@@ -275,46 +287,41 @@ class MainActivity : AppCompatActivity() {
             putExtras(originalIntent.extras ?: Bundle())
             // Add specific extras based on player type
             if (isTOR1) {
-                putExtra(
-                    "extra_position",
-                    getCurrentPlaybackPosition()
-                )  // VLC expects 'extra_position'
-                putExtra(
-                    "extra_duration",
-                    retrieveCachedPlaybackPosition()
-                )  // VLC expects 'extra_duration'
+                putExtra("extra_position", getCurrentPlaybackPosition())  // VLC expects 'extra_position'
+                putExtra("extra_duration", retrieveCachedPlaybackPosition())  // VLC expects 'extra_duration'
             } else {
                 putExtra("position", getCurrentPlaybackPosition())  // MX Player expects 'position'
-                putExtra(
-                    "duration",
-                    retrieveCachedPlaybackPosition()
-                )  // MX Player expects 'duration'
+                putExtra("duration", retrieveCachedPlaybackPosition())  // MX Player expects 'duration'
             }
             putExtra("return_result", true)
+
             // Add intent flags based on player compatibility
-            if (isTOR1) {
-                addFlags(
-                    // addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                            Intent.FLAG_ACTIVITY_SINGLE_TOP
-                )
+            val flags = if (intent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT != 0) {
+                Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP
             } else {
-                addFlags(
-                    // addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                            Intent.FLAG_ACTIVITY_FORWARD_RESULT or
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
             }
+            addFlags(flags)  // Add the evaluated flags
+            // } else { addFlags( FLAGS_FOR_MXPLAYER_HERE
         }
+        // Check if a compatible media player is available
         if (playerIntent.resolveActivity(packageManager) != null) {
-            streamResultLauncher.launch(playerIntent)
-            finish() // Call finish after launching
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    // Use modern ActivityResultLauncher for Android 10+ (API Q29+)
+                    streamResultLauncher.launch(playerIntent)
+                } else {
+                    // Use startActivityForResult() for older Android versions
+                    @Suppress("DEPRECATION")
+                    startActivityForResult(playerIntent, REQUEST_CODE_PLAYBACK)
+                }
+                finish()  // Close stub activity after launching the player
         } else {
             finish()  // Terminate if no suitable player is found
         }
+
     }
 
     // Method to reset the playback position to ensure it starts fresh
@@ -322,9 +329,9 @@ class MainActivity : AppCompatActivity() {
         StreamResultReceiver.lastKnownPosition = 0L
     }
 
-/* ************************************************ /
-// Broadcast Receivers
-/ ************************************************ */
+    /* ************************************************ /
+    // Broadcast Receivers
+    / ************************************************ */
 
     // Stream BroadcastReceiver to capture playback position
     class StreamResultReceiver : BroadcastReceiver() {
@@ -374,9 +381,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-/* ************************************************ /
-// Caching
-/ ************************************************ */
+    // Handle Activity Result (For Older Devices)
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_CODE_PLAYBACK && resultCode == RESULT_OK) {
+            data?.let { resultData ->
+                val position = resultData.getLongExtra("extra_position", 0L)
+                sendPlaybackPositionToStremio(this, position, 0L)
+            }
+        }
+    }
+
+
+    /* ************************************************ /
+    // Caching
+    / ************************************************ */
 
     // Cache user config addressMinimise repeated I/O operations, ensures only one instance is used throughout
     private fun getStoredStremioServer(): String {
@@ -398,15 +418,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-/* ************************************************ /
-// Foreground Service Management
-/ ************************************************ */
+    /* ************************************************ /
+    // Foreground Service Management
+    / ************************************************ */
 
     private fun stopForegroundServiceIfNeeded() {
         if (!isMonitoringPlayback) {
             stopService(Intent(this, PlaybackForegroundService::class.java))
         }
     }
+
     // Keep alive for polling playback time
     class PlaybackForegroundService : Service() {
         override fun onCreate() {
@@ -423,6 +444,7 @@ class MainActivity : AppCompatActivity() {
                 manager.notify(1, notification)
             }
         }
+
         private fun buildNotification(): Notification {
             return NotificationCompat.Builder(this, "STUBIO_CHANNEL")
                 .setContentTitle("Stubio Service")
@@ -431,6 +453,7 @@ class MainActivity : AppCompatActivity() {
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build()
         }
+
         override fun onBind(intent: Intent?): IBinder? = null
     }
 
