@@ -1,5 +1,6 @@
 package com.intentrouter.stubio
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -39,7 +40,7 @@ class MainActivity : AppCompatActivity() {
             delay(10000L) // Poll every 10 seconds
         }
     }
-
+    // Assign an active YouTube video player
     private val pkgYT: String by lazy {
         if (packageManager.getLaunchIntentForPackage("com.teamsmart.videomanager.tv") != null) {
             "com.teamsmart.videomanager.tv"
@@ -47,7 +48,7 @@ class MainActivity : AppCompatActivity() {
             "com.google.android.youtube"
         }
     }
-
+    // Assign an active Torrentio Stream video player
     private val pkgP2P: String by lazy {
         if (packageManager.getLaunchIntentForPackage("org.videolan.vlc") != null) {
             "org.videolan.vlc"
@@ -56,6 +57,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -84,27 +86,25 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
-
+        // Set intent and Uri variables
         val incomingIntent = intent
         val incomingUri: Uri? = incomingIntent.data
-
+        // Validate host matches dynamic list
         incomingUri?.host?.let { host ->
-            if (isAllowedHost(host)) {
-                routeUri(incomingUri, incomingIntent)
-            } else {
-                finish()
-            }
+            if (isAllowedHost(host)) { routeUri(incomingUri, incomingIntent)
+            } else { finish() }
         }
-
-        val filterv = IntentFilter("org.videolan.vlc.player.result")
+        // Register an APIv23-compatible BroadcastReceiver to get playback position from VLC
+        val filter = IntentFilter("org.videolan.vlc.player.result")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(VLCResultReceiver(), filterv, Context.RECEIVER_NOT_EXPORTED)
+            registerReceiver(VLCResultReceiver(), filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
-            registerReceiver(VLCResultReceiver(), filterv)
+            registerReceiver(VLCResultReceiver(), filter)
         }
 
         finish()
-    }
+    } // End onCreate
+
     // Parse and filter hosts dynamically to ensure they match valid hosts
     private fun isAllowedHost(host: String?): Boolean {
         val allowedHostPatterns = listOf(
@@ -144,12 +144,9 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 data = Uri.parse(youtubeUrl)
                 setPackage(pkgYT)
-                // Check Stubio started with FORWARD_RESULT, else launch independent
-                if (intent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT != 0) {
-                    addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
-                } else {
-                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
+                // Launch SmartTubeNext/YoutTube as an independent task
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                // Ensure return result extra is set correctly
                 putExtra("return_result", true)
             }
             if (intent.resolveActivity(packageManager) != null) {
@@ -170,10 +167,9 @@ class MainActivity : AppCompatActivity() {
                 putExtra("startfrom", originalIntent.getIntExtra("startfrom", 0))
                 putExtra("position", originalIntent.getIntExtra("position", 0))
                 putExtra("return_result", true)
-                // Note // Test these and other flags until behaviour is consistent with SoR
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NO_HISTORY)
-                // FLAG_GRANT_READ_URI_PERMISSION ensures Stubio can access content URIs shared by Stremio
-                // FLAG_ACTIVITY_NO_HISTORY prevents the activity from being stored in the recent tasks list
+                // Fail-safe approach: always forward result, ensure a new task is created if not running yet
+                addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             }
             if (playerIntent.resolveActivity(packageManager) != null) {
                 vlcResultLauncher.launch(playerIntent)
@@ -194,7 +190,6 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.cancel()
         unregisterReceiver(VLCResultReceiver())
     }
-
     class VLCResultReceiver : BroadcastReceiver() {
         companion object {
             var lastKnownPosition: Long = 0L
@@ -205,11 +200,11 @@ class MainActivity : AppCompatActivity() {
                 val position = intent.getLongExtra("extra_position", 0L)
                 val duration = intent.getLongExtra("extra_duration", 0L)
                 lastKnownPosition = position
+                // Send the position back to Stremio via companion object
                 sendPlaybackPositionToStremio(context, position, duration)
             }
         }
     }
-
     // Function to relay the playback position back to Stremio [com.stremio.one]
     companion object {
         fun sendPlaybackPositionToStremio(context: Context, position: Long, duration: Long) {
@@ -217,7 +212,10 @@ class MainActivity : AppCompatActivity() {
                 val returnIntent = Intent(Intent.ACTION_VIEW).apply {
                     data = Uri.parse("stremio://playback?position=$position&duration=$duration")
                     setPackage("com.stremio.one")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    // Preserve the user's session, bring Stremio to front if running, launch it if not
+                    addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    // If Stremio resets to main screen or does not maintain its state, consider adding:
+                    // addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
                 context.startActivity(returnIntent)
             } catch (e: Exception) {
@@ -225,11 +223,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-
     private fun getCurrentPlaybackPosition(): Long {
         return VLCResultReceiver.fetchLastKnownPosition()
     }
-
+    // Keep alive for polling playback time
     class PlaybackForegroundService : Service() {
         override fun onCreate() {
             super.onCreate()
@@ -244,15 +241,14 @@ class MainActivity : AppCompatActivity() {
                     .build()
             startForeground(1, notification)
         }
-
         override fun onBind(intent: Intent?): IBinder? = null
 
         override fun onDestroy() {
             stopForeground(true)
             super.onDestroy()
         }
-
         // Function to create notification channel with fallback for API 23+
+        @SuppressLint("WrongConstant", "ObsoleteSdkInt")
         private fun createNotificationChannel() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val channel = NotificationChannel(
@@ -277,7 +273,7 @@ class MainActivity : AppCompatActivity() {
 
     }
 
-    // Update domain/IP with user configured Stremio server address
+    // Update domain/IP with user-configured Stremio server address
     class ServerConfigReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val serverIp = intent.getStringExtra("server_ip") ?: return
@@ -286,4 +282,5 @@ class MainActivity : AppCompatActivity() {
             // Log.d("Stubio", "Stremio server IP updated to: $serverIp")
         }
     }
+
 }
