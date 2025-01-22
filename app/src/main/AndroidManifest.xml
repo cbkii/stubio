@@ -73,7 +73,8 @@
             </intent-filter>
         </receiver>
         <!-- Declare User custom settings-->
-        <receiver android:name=".MainActivity$ServerConfigReceiver" android:exported="true">
+        <receiver android:name=".MainActivity$ServerConfigReceiver" android:exported="true"
+            tools:ignore="ExportedReceiver">
             <intent-filter>
                 <action android:name="com.intentrouter.stubio.SET_SERVER"/>
             </intent-filter>

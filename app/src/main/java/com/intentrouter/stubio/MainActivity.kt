@@ -40,6 +40,7 @@ class MainActivity : AppCompatActivity() {
             delay(10000L) // Poll every 10 seconds
         }
     }
+
     // Assign an active YouTube video player
     private val pkgYT: String by lazy {
         if (packageManager.getLaunchIntentForPackage("com.teamsmart.videomanager.tv") != null) {
@@ -48,6 +49,7 @@ class MainActivity : AppCompatActivity() {
             "com.google.android.youtube"
         }
     }
+
     // Assign an active Torrentio Stream video player
     private val pkgP2P: String by lazy {
         if (packageManager.getLaunchIntentForPackage("org.videolan.vlc") != null) {
@@ -91,8 +93,11 @@ class MainActivity : AppCompatActivity() {
         val incomingUri: Uri? = incomingIntent.data
         // Validate host matches dynamic list
         incomingUri?.host?.let { host ->
-            if (isAllowedHost(host)) { routeUri(incomingUri, incomingIntent)
-            } else { finish() }
+            if (isAllowedHost(host)) {
+                routeUri(incomingUri, incomingIntent)
+            } else {
+                finish()
+            }
         }
         // Register an APIv23-compatible BroadcastReceiver to get playback position from VLC
         val filter = IntentFilter("org.videolan.vlc.player.result")
@@ -119,6 +124,7 @@ class MainActivity : AppCompatActivity() {
         )
         return allowedHostPatterns.any { pattern -> host?.matches(pattern.toRegex()) == true } || host == getStoredStremioServer()
     }
+
     private fun getStoredStremioServer(): String? {
         val sharedPref = getSharedPreferences("StubioPrefs", Context.MODE_PRIVATE)
         return sharedPref.getString("stremio_server_ip", "127.0.0.1")
@@ -190,11 +196,13 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.cancel()
         unregisterReceiver(VLCResultReceiver())
     }
+
     class VLCResultReceiver : BroadcastReceiver() {
         companion object {
             var lastKnownPosition: Long = 0L
             fun fetchLastKnownPosition(): Long = lastKnownPosition
         }
+
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == "org.videolan.vlc.player.result") {
                 val position = intent.getLongExtra("extra_position", 0L)
@@ -205,6 +213,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
     // Function to relay the playback position back to Stremio [com.stremio.one]
     companion object {
         fun sendPlaybackPositionToStremio(context: Context, position: Long, duration: Long) {
@@ -223,9 +232,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
     private fun getCurrentPlaybackPosition(): Long {
         return VLCResultReceiver.fetchLastKnownPosition()
     }
+
     // Keep alive for polling playback time
     class PlaybackForegroundService : Service() {
         override fun onCreate() {
@@ -235,18 +246,18 @@ class MainActivity : AppCompatActivity() {
             }
             val notification =
                 NotificationCompat.Builder(this@PlaybackForegroundService, "STUBIO_CHANNEL")
-                    .setContentTitle("Stubio Service")
-                    .setContentText("Playback position handler")
-                    .setSmallIcon(R.drawable.ic_notification)
-                    .build()
+                    .setContentTitle("Stubio Service").setContentText("Playback position handler")
+                    .setSmallIcon(R.drawable.ic_notification).build()
             startForeground(1, notification)
         }
+
         override fun onBind(intent: Intent?): IBinder? = null
 
         override fun onDestroy() {
             stopForeground(true)
             super.onDestroy()
         }
+
         // Function to create notification channel with fallback for API 23+
         @SuppressLint("WrongConstant", "ObsoleteSdkInt")
         private fun createNotificationChannel() {
@@ -261,11 +272,9 @@ class MainActivity : AppCompatActivity() {
             } else {
                 // Fallback for Android 6 (API 23)
                 val notification = NotificationCompat.Builder(this, "STUBIO_CHANNEL")
-                    .setContentTitle("Stubio Service")
-                    .setContentText("Playback position handler")
+                    .setContentTitle("Stubio Service").setContentText("Playback position handler")
                     .setSmallIcon(R.drawable.ic_notification)
-                    .setPriority(NotificationCompat.PRIORITY_LOW)
-                    .build()
+                    .setPriority(NotificationCompat.PRIORITY_LOW).build()
                 val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                 manager.notify(1, notification)
             }
