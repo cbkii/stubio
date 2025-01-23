@@ -48,7 +48,6 @@ class MainActivity : AppCompatActivity() {
         lateinit var pkgYT: String
         lateinit var pkgP2P: String
         var isTOR1 by Delegates.notNull<Boolean>()  // No default value, must be initialized
-
         var cachedStremioServer: String? = "127.0.0.1"
 
         // Relay the playback position back to Stremio
@@ -76,11 +75,19 @@ class MainActivity : AppCompatActivity() {
         Log.d("Stubio", "onCreate() called with intent: $intent")
         // Toast.makeText(this, "DEBUG: onCreate", Toast.LENGTH_SHORT).show()
 
-        startMonitoringPlayback()
-
         pkgYT = packageManager.getLaunchIntentForPackage(YT1)?.let { YT1 } ?: YT2
         pkgP2P = packageManager.getLaunchIntentForPackage(TOR1)?.let { TOR1 } ?: TOR2
         isTOR1 = (pkgP2P == TOR1)
+
+        // Ensure window token is valid
+        if (window?.decorView?.windowToken == null) {
+            Log.e("Stubio", "Invalid window token")
+            finish()
+            return
+        }
+        handleIncomingIntent(intent)
+
+        startMonitoringPlayback()
 
         registerStreamReceiver()
 
@@ -99,7 +106,7 @@ class MainActivity : AppCompatActivity() {
             val serviceIntent = Intent(this@MainActivity, PlaybackForegroundService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Log.d("Stubio", "onStart() -> startForegroundService()")
-                startForegroundService(serviceIntent)
+                    startForegroundService(serviceIntent)
             } else {
                 Log.d("Stubio", "onStart() -> startService()")
                 startService(serviceIntent)
@@ -188,6 +195,7 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
         Log.d("Stubio", "onPause() called")
         // Toast.makeText(this, "DEBUG: onPause", Toast.LENGTH_SHORT).show()
+
         stopMonitoringPlayback()
     }
 
@@ -218,11 +226,25 @@ class MainActivity : AppCompatActivity() {
                 Log.d("Stubio", "Playback position reset after ~2s post onDestroy")
             }
         }
+        stopForegroundServiceIfNeeded()
     }
+
 
     /* ************************************************ /
        Playback Monitoring
      / ************************************************ */
+
+    private var lastKnownPosition: Long = 0
+
+    private fun updatePlaybackPosition(position: Long) {
+        lastKnownPosition = position
+        sendPlaybackPositionToStremio(position)
+    }
+
+    private fun launchWithPosition() {
+        val uri = intent.data ?: return
+        launchWithStreamApp(uri, lastKnownPosition)
+    }
 
     // Runnable to periodically check playback position and send it to Stremio
     private var playbackMonitoringJob: Job? = null
@@ -278,6 +300,7 @@ class MainActivity : AppCompatActivity() {
         if (host == null) {
             Log.w("Stubio", "isAllowedHost() -> Host is null")
             return false
+            finish()
         }
         val allowedHostPatterns = listOf(
             "127\\.0\\.0\\.1",
@@ -304,6 +327,7 @@ class MainActivity : AppCompatActivity() {
             launchWithYTapp(youtubeUrl)
         } else {
             Log.d("Stubio", "Not a recognized YouTube link -> launching P2P player")
+            isExternalPlayerLaunched = true
             launchWithStreamApp(intent)
         }
     }
@@ -314,18 +338,22 @@ class MainActivity : AppCompatActivity() {
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
             // putExtra("return_result", true)
         }
-        if (intent.resolveActivity(packageManager) != null) {
-            Log.d("Stubio", "launchWithYTapp() -> Starting YT app with url:$youtubeUrl pkg:$pkgYT")
-            // Toast.makeText(this, "DEBUG: Launching $pkgYT for YouTube link", Toast.LENGTH_SHORT).show()
-            startActivity(intent)
-        } else {
-            Log.w("Stubio", "No activity found to handle YouTube link!")
-            // Toast.makeText(this, "DEBUG: No YT app found, finishing", Toast.LENGTH_SHORT).show()
+        try {  // Add try-catch to handle potential crashes
+            if (intent.resolveActivity(packageManager) != null) {
+                Log.d("Stubio", "launchWithYTapp() -> Starting YT app with url:$youtubeUrl pkg:$pkgYT")
+                // Toast.makeText(this, "DEBUG: Launching $pkgYT for YouTube link", Toast.LENGTH_SHORT).show()
+                startActivity(intent)
+                // As we don’t need result from external player, safely finish soon after its launched
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    finish()
+                }, 1234)
+            } else {
+                Log.w("Stubio", "No activity found to handle YouTube link!")
+                // Toast.makeText(this, "DEBUG: No YT app found, finishing", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Log.e("Stubio", "Failed to launch YouTube app: ${e.message}")
         }
-//        // As we don’t need result from external player, safely finish soon after its launched
-//        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-//            finish()
-//        }, 1234)
     }
 
     // Launch VLC/MX Player with parsed intent and extras, for return result
@@ -353,24 +381,26 @@ class MainActivity : AppCompatActivity() {
                 Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_CLEAR_TOP or
                         Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        (originalIntent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT)
             )
         }
-        // Check if a compatible media player is available
-        if (playerIntent.resolveActivity(packageManager) != null) {
-            Log.d("Stubio", "launchWithStreamApp() -> Found valid external player. Launching $pkgP2P")
-            // Launch for result
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Modern approach
-                streamResultLauncher.launch(playerIntent)
+
+        try {  // Add try-catch for safety
+            // Check if a compatible media player is available
+            if (playerIntent.resolveActivity(packageManager) != null) {
+                Log.d("Stubio", "launchWithStreamApp() -> Found valid external player. Launching $pkgP2P")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    streamResultLauncher.launch(playerIntent)
+                } else {
+                    @Suppress("DEPRECATION")
+                    startActivityForResult(playerIntent, REQUEST_CODE_PLAYBACK)
+                }
             } else {
-                // Legacy approach for Android < Q
-                @Suppress("DEPRECATION")
-                startActivityForResult(playerIntent, REQUEST_CODE_PLAYBACK)
+                Log.w("Stubio", "No suitable P2P player found.")
+                finish()  // Remove delayed finish, do it immediately
             }
-            // DO NOT finish() here. Let Stubio remain active to receive the result.
-        } else {
-            Log.w("Stubio", "No suitable P2P player found.")
+        } catch (e: Exception) {
+            Log.e("Stubio", "Failed to launch stream app: ${e.message}")
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                 finish()
             },  321)
@@ -439,23 +469,35 @@ class MainActivity : AppCompatActivity() {
             Log.d("Stubio", "StreamResultReceiver registered")
         }
     }
-    // Handle Activity Result on Older Devices
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         Log.d("Stubio", "onActivityResult -> requestCode:$requestCode resultCode:$resultCode data:$data")
-        if (requestCode == REQUEST_CODE_PLAYBACK && resultCode == RESULT_OK) {
-            data?.let { resultData ->
-                val position = resultData.getLongExtra("extra_position", 0L)
-                Log.d("Stubio", "onActivityResult -> Got position:$position from external player")
-                sendPlaybackPositionToStremio(this, position, 0L)
+
+        if (requestCode == REQUEST_CODE_PLAYBACK) {
+            when (resultCode) {
+                RESULT_OK -> {
+                    data?.let { resultData ->
+                        val position = resultData.getLongExtra("extra_position", 0L)
+                        Log.d("Stubio", "onActivityResult -> Got position:$position from external player")
+                        sendPlaybackPositionToStremio(this, position, 0L)
+                    } ?: run {
+                        Log.e("Stubio", "onActivityResult -> Data is null, cannot retrieve position")
+                    }
+                }
+                RESULT_CANCELED -> {
+                    Log.w("Stubio", "onActivityResult -> Playback cancelled or failed")
+                }
+                else -> {
+                    Log.w("Stubio", "onActivityResult -> Unexpected resultCode:$resultCode")
+                }
             }
+
+            // Close the activity after handling the result, with a delay to allow Stremio to process
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                finish()
+            }, 2222)  // Give Stremio ~2s to process, it can be slow to reload
         }
-//        Log.d("Stubio", "onActivityResult() -> finishing, sent sendPlaybackPositionToStremio()")
-//        // Now that external player is done or user is back, close stub
-//        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-//            finish()
-//        }, 2222)  // Give Stremio ~2s to process, it can be slow to reload
     }
 
     /* ************************************************ /
@@ -486,6 +528,17 @@ class MainActivity : AppCompatActivity() {
     /* ************************************************ /
        Foreground Service Management
      / ************************************************ */
+
+    private fun startForegroundService() {
+        if (!isExternalPlayerLaunching) {
+            val serviceIntent = Intent(this, PlaybackForegroundService::class.java)
+            startForegroundService(serviceIntent)
+        }
+    }
+    private fun stopForegroundServiceIfNeeded() {
+        val serviceIntent = Intent(this, PlaybackForegroundService::class.java)
+        stopService(serviceIntent)
+    }
     private fun stopForegroundServiceIfNeeded() {
         if (!isMonitoringPlayback) {
             Log.d("Stubio", "stopForegroundServiceIfNeeded() -> Stopping PlaybackForegroundService")
@@ -500,6 +553,7 @@ class MainActivity : AppCompatActivity() {
             super.onCreate()
             Log.d("Stubio", "PlaybackForegroundService -> onCreate")
             ensureNotification()
+
         }
 
         private fun ensureNotification() {
