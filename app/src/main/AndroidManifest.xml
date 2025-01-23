@@ -47,6 +47,7 @@
                 <!-- General HTTP and HTTPS links -->
                 <data android:scheme="http" />
                 <data android:scheme="https" />
+                <data android:scheme="intent" />
                 <!-- Covering common/default IPs -->
                 <data android:host="127.0.0.1" />
                 <data android:host="localhost" />
@@ -67,7 +68,7 @@
 
         </activity>
         <!-- Declare VLC return playback position to Stremio -->
-        <receiver android:name=".MainActivity$VLCResultReceiver" android:exported="false">
+        <receiver android:name=".MainActivity$StreamResultReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="org.videolan.vlc.player.result"/>
             </intent-filter>

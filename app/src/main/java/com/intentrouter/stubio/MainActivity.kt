@@ -293,19 +293,20 @@ class MainActivity : AppCompatActivity() {
 
     // Route match to the appropriate media player (P2P or parsed YouTube link)
     private fun routeUri(uri: Uri, intent: Intent) {
-        Log.d("Stubio", "routeUri() -> Checking if it's a YouTube link: $uri")
-        val youtubeRegex = """(?:/yt/|v=|/v/|youtu.be|[/?=&])([a-zA-Z0-9_-]{11})""".toRegex()
+        Log.d("Stubio", "routeUri() -> Checking if it's a YouTubeID or TorStream: $uri")
+
+        // Make the YouTube regex less aggressive so it only matches actual /yt/ paths:
+        // e.g. "/yt/VIDEO_ID" with exactly 11 valid YT chars
+        val youtubeRegex = """/yt/([A-Za-z0-9_-]{11})""".toRegex()
         val match = youtubeRegex.find(uri.toString())
         if (match != null) {
             val youtubeId = match.groupValues[1]
             Log.d("Stubio", "YouTube ID found: $youtubeId, launching YouTube")
             launchWithYTapp("https://www.youtube.com/watch?v=$youtubeId")
         } else {
-            Log.d("Stubio", "Not a recognized YouTube link -> resetting playback position")
-            resetPlaybackPosition()
+            Log.d("Stubio", "Not a recognized YouTube link -> launching P2P player")
+            launchWithStreamApp(intent)
         }
-        // After checking YT possibility, also attempt to launch the P2P stream
-        launchWithStreamApp(intent)
     }
     // Launch SmartTubeNext or YouTube app, no need for return result
     private fun launchWithYTapp(youtubeUrl: String) {
