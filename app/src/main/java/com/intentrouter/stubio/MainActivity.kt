@@ -188,7 +188,6 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
         Log.d("Stubio", "onPause() called")
         // Toast.makeText(this, "DEBUG: onPause", Toast.LENGTH_SHORT).show()
-
         stopMonitoringPlayback()
     }
 
