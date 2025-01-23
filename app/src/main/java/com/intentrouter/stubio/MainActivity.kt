@@ -118,13 +118,13 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     Log.w("Stubio", "Host NOT allowed: $host. Finishing.")
                     // Toast.makeText(this@MainActivity, "DEBUG: Host not allowed, finishing.", Toast.LENGTH_SHORT).show()
-                    delay(123)
+                    delay(321)
                     finish()
                 }
             } ?: run {
                 Log.w("Stubio", "No URI host. Finishing.")
                 // Toast.makeText(this@MainActivity, "DEBUG: No URI host, finishing.", Toast.LENGTH_SHORT).show()
-                delay(123)
+                delay(321)
                 finish()
             }
        }
@@ -133,12 +133,7 @@ class MainActivity : AppCompatActivity() {
         streamResultLauncher =
             registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
                 Log.d("Stubio", "External Player Activity Result received. resultCode = ${result.resultCode}")
-                // Toast.makeText(this, "DEBUG: Received ActivityResult code:${result.resultCode}", Toast.LENGTH_SHORT).show()
-
-                if (result.resultCode == RESULT_OK ||
-                    result.resultCode == Activity.RESULT_CANCELED ||
-                    result.resultCode == Activity.RESULT_FIRST_USER
-                ) {
+                if ( result.resultCode == RESULT_OK || result.resultCode == Activity.RESULT_CANCELED ) {
                     result.data?.let { data ->
                         Log.d("Stubio", "Result data from external player: $data.extras")
                         val playbackIntent = Intent().apply {
@@ -172,6 +167,10 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     Log.w("Stubio", "Result code from external player not handled: ${result.resultCode}")
                 }
+                // Close Stubio no matter what result code was, or only when successful:
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    finish()
+                },  2222)  // Give Stremio ~2s to process, it can be slow to reload
             }
     }
 
@@ -301,8 +300,9 @@ class MainActivity : AppCompatActivity() {
         val match = youtubeRegex.find(uri.toString())
         if (match != null) {
             val youtubeId = match.groupValues[1]
+            val youtubeUrl = "https://www.youtube.com/watch?v=$youtubeId"
             Log.d("Stubio", "YouTube ID found: $youtubeId, launching YouTube")
-            launchWithYTapp("https://www.youtube.com/watch?v=$youtubeId")
+            launchWithYTapp(youtubeUrl)
         } else {
             Log.d("Stubio", "Not a recognized YouTube link -> launching P2P player")
             launchWithStreamApp(intent)
@@ -312,7 +312,6 @@ class MainActivity : AppCompatActivity() {
     private fun launchWithYTapp(youtubeUrl: String) {
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(youtubeUrl)).apply {
             setPackage(pkgYT)
-            // Launch YT Player as an independent task, no need to return position
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
             // putExtra("return_result", true)
         }
@@ -324,10 +323,10 @@ class MainActivity : AppCompatActivity() {
             Log.w("Stubio", "No activity found to handle YouTube link!")
             // Toast.makeText(this, "DEBUG: No YT app found, finishing", Toast.LENGTH_SHORT).show()
         }
-        // As we don’t need result from external player, safely finish soon after its launched
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            finish()
-        }, 1234)
+//        // As we don’t need result from external player, safely finish soon after its launched
+//        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+//            finish()
+//        }, 1234)
     }
 
     // Launch VLC/MX Player with parsed intent and extras, for return result
@@ -336,6 +335,7 @@ class MainActivity : AppCompatActivity() {
             setDataAndType(originalIntent.data, "video/*")
             setPackage(pkgP2P)
             putExtras(originalIntent.extras ?: Bundle())
+            // Put extras needed by VLC or MX
             if (isTOR1) {
                 val pos = getCurrentPlaybackPosition()
                 putExtra("extra_position", pos)
@@ -347,38 +347,37 @@ class MainActivity : AppCompatActivity() {
                 putExtra("duration", retrieveCachedPlaybackPosition())
                 Log.d("Stubio", "launchWithStreamApp() -> For MX: position:$pos")
             }
+            // We DO want a return result in Stubio
             putExtra("return_result", true)
-
-            // Add intent flags based on player compatibility
-            val flags = if (intent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT != 0) {
-                Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP
-            } else {
+            // Remove forward-result logic; always use standard flags
+            addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_CLEAR_TOP or
                         Intent.FLAG_GRANT_READ_URI_PERMISSION or
                         Intent.FLAG_ACTIVITY_SINGLE_TOP
-            }
-            addFlags(flags)
+            )
         }
         // Check if a compatible media player is available
         if (playerIntent.resolveActivity(packageManager) != null) {
             Log.d("Stubio", "launchWithStreamApp() -> Found valid external player. Launching $pkgP2P")
-            // Toast.makeText(this, "DEBUG: Launching $pkgP2P for stream", Toast.LENGTH_SHORT).show()
-
+            // Launch for result
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // Modern approach
                 streamResultLauncher.launch(playerIntent)
             } else {
+                // Legacy approach for Android < Q
                 @Suppress("DEPRECATION")
                 startActivityForResult(playerIntent, REQUEST_CODE_PLAYBACK)
             }
+            // DO NOT finish() here. Let Stubio remain active to receive the result.
         } else {
             Log.w("Stubio", "No suitable P2P player found.")
-            // Toast.makeText(this, "DEBUG: No P2P player found, finishing.", Toast.LENGTH_SHORT).show()
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                 finish()
-            }, 123)
+            },  321)
         }
     }
+
     // Method to reset the playback position to ensure it starts fresh
     private fun resetPlaybackPosition() {
         StreamResultReceiver.lastKnownPosition = 0L
@@ -453,11 +452,11 @@ class MainActivity : AppCompatActivity() {
                 sendPlaybackPositionToStremio(this, position, 0L)
             }
         }
-        Log.d("Stubio", "onActivityResult() -> finishing, sent sendPlaybackPositionToStremio()")
-        // Now that external player is done or user is back, close stub
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            finish()
-        }, 2222)  // Give Stremio ~2s to process, it can be slow to reload
+//        Log.d("Stubio", "onActivityResult() -> finishing, sent sendPlaybackPositionToStremio()")
+//        // Now that external player is done or user is back, close stub
+//        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+//            finish()
+//        }, 2222)  // Give Stremio ~2s to process, it can be slow to reload
     }
 
     /* ************************************************ /

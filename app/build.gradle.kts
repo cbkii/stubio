@@ -13,7 +13,7 @@ android {
         minSdk = 23  // Ensure old Android TVs can run the app
         //noinspection OldTargetApi
         targetSdk = 34  // Use stable latest for TVs, check latest API for no issues else keep previous stable
-        versionName = "1.2." + (System.currentTimeMillis() / 100000).toInt()  // User-facing version
+        versionName = "1.3." + (System.currentTimeMillis() / 100000).toInt()  // User-facing version
         versionCode = (System.currentTimeMillis() / 1000).toInt()    // Internal version, auto increment as timestamp
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
