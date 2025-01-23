@@ -14,7 +14,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.util.Log      // DEBUG: For logging
-import android.widget.Toast // DEBUG: For toast debugging
+// import android.widget.Toast // DEBUG: For toast debugging
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -61,7 +61,7 @@ class MainActivity : AppCompatActivity() {
                 addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             Log.d("Stubio", "sendPlaybackPositionToStremio() - Sending position:$position duration:$duration")
-            Toast.makeText(context, "DEBUG: Sending position:$position to Stremio", Toast.LENGTH_SHORT).show()
+            // Toast.makeText(context, "DEBUG: Sending position:$position to Stremio", Toast.LENGTH_SHORT).show()
             context.startActivity(intent)
         }
     }
@@ -74,7 +74,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d("Stubio", "onCreate() called with intent: $intent")
-        Toast.makeText(this, "DEBUG: onCreate", Toast.LENGTH_SHORT).show()
+        // Toast.makeText(this, "DEBUG: onCreate", Toast.LENGTH_SHORT).show()
 
         startMonitoringPlayback()
 
@@ -92,7 +92,7 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         Log.d("Stubio", "onStart() called")
-        Toast.makeText(this, "DEBUG: onStart", Toast.LENGTH_SHORT).show()
+        // Toast.makeText(this, "DEBUG: onStart", Toast.LENGTH_SHORT).show()
 
         lifecycleScope.launch {
             // Keep the app alive using a foreground service to prevent Android10+ aggressive background app killing
@@ -107,7 +107,7 @@ class MainActivity : AppCompatActivity() {
 
             val incomingUri: Uri? = intent.data
             Log.d("Stubio", "Incoming URI: $incomingUri")
-            Toast.makeText(this@MainActivity, "DEBUG: Incoming URI: $incomingUri", Toast.LENGTH_SHORT).show()
+            // Toast.makeText(this@MainActivity, "DEBUG: Incoming URI: $incomingUri", Toast.LENGTH_SHORT).show()
 
             incomingUri?.host?.let { host ->
                 Log.d("Stubio", "Host found: $host")
@@ -117,13 +117,13 @@ class MainActivity : AppCompatActivity() {
                     delay(456)  // Allow time for processing before launching the player
                 } else {
                     Log.w("Stubio", "Host NOT allowed: $host. Finishing.")
-                    Toast.makeText(this@MainActivity, "DEBUG: Host not allowed, finishing.", Toast.LENGTH_SHORT).show()
+                    // Toast.makeText(this@MainActivity, "DEBUG: Host not allowed, finishing.", Toast.LENGTH_SHORT).show()
                     delay(123)
                     finish()
                 }
             } ?: run {
                 Log.w("Stubio", "No URI host. Finishing.")
-                Toast.makeText(this@MainActivity, "DEBUG: No URI host, finishing.", Toast.LENGTH_SHORT).show()
+                // Toast.makeText(this@MainActivity, "DEBUG: No URI host, finishing.", Toast.LENGTH_SHORT).show()
                 delay(123)
                 finish()
             }
@@ -133,7 +133,7 @@ class MainActivity : AppCompatActivity() {
         streamResultLauncher =
             registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
                 Log.d("Stubio", "External Player Activity Result received. resultCode = ${result.resultCode}")
-                Toast.makeText(this, "DEBUG: Received ActivityResult code:${result.resultCode}", Toast.LENGTH_SHORT).show()
+                // Toast.makeText(this, "DEBUG: Received ActivityResult code:${result.resultCode}", Toast.LENGTH_SHORT).show()
 
                 if (result.resultCode == RESULT_OK ||
                     result.resultCode == Activity.RESULT_CANCELED ||
@@ -180,7 +180,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         Log.d("Stubio", "onResume() called")
-        Toast.makeText(this, "DEBUG: onResume", Toast.LENGTH_SHORT).show()
+        // Toast.makeText(this, "DEBUG: onResume", Toast.LENGTH_SHORT).show()
 
         startMonitoringPlayback()
     }
@@ -188,7 +188,7 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         Log.d("Stubio", "onPause() called")
-        Toast.makeText(this, "DEBUG: onPause", Toast.LENGTH_SHORT).show()
+        // Toast.makeText(this, "DEBUG: onPause", Toast.LENGTH_SHORT).show()
 
         stopMonitoringPlayback()
     }
@@ -196,7 +196,7 @@ class MainActivity : AppCompatActivity() {
     override fun onStop() {
         super.onStop()
         Log.d("Stubio", "onStop() called")
-        Toast.makeText(this, "DEBUG: onStop", Toast.LENGTH_SHORT).show()
+        // Toast.makeText(this, "DEBUG: onStop", Toast.LENGTH_SHORT).show()
 
         if (isStreamReceiverRegistered) {
             Log.d("Stubio", "Unregistering StreamResultReceiver")
@@ -209,7 +209,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         Log.d("Stubio", "onDestroy() called")
-        Toast.makeText(this, "DEBUG: onDestroy", Toast.LENGTH_SHORT).show()
+        // Toast.makeText(this, "DEBUG: onDestroy", Toast.LENGTH_SHORT).show()
 
         lifecycleScope.cancel()
         stopMonitoringPlayback()
@@ -318,11 +318,11 @@ class MainActivity : AppCompatActivity() {
         }
         if (intent.resolveActivity(packageManager) != null) {
             Log.d("Stubio", "launchWithYTapp() -> Starting YT app with url:$youtubeUrl pkg:$pkgYT")
-            Toast.makeText(this, "DEBUG: Launching $pkgYT for YouTube link", Toast.LENGTH_SHORT).show()
+            // Toast.makeText(this, "DEBUG: Launching $pkgYT for YouTube link", Toast.LENGTH_SHORT).show()
             startActivity(intent)
         } else {
             Log.w("Stubio", "No activity found to handle YouTube link!")
-            Toast.makeText(this, "DEBUG: No YT app found, finishing", Toast.LENGTH_SHORT).show()
+            // Toast.makeText(this, "DEBUG: No YT app found, finishing", Toast.LENGTH_SHORT).show()
         }
         // As we don’t need result from external player, safely finish soon after its launched
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
@@ -363,7 +363,7 @@ class MainActivity : AppCompatActivity() {
         // Check if a compatible media player is available
         if (playerIntent.resolveActivity(packageManager) != null) {
             Log.d("Stubio", "launchWithStreamApp() -> Found valid external player. Launching $pkgP2P")
-            Toast.makeText(this, "DEBUG: Launching $pkgP2P for stream", Toast.LENGTH_SHORT).show()
+            // Toast.makeText(this, "DEBUG: Launching $pkgP2P for stream", Toast.LENGTH_SHORT).show()
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 streamResultLauncher.launch(playerIntent)
@@ -373,7 +373,7 @@ class MainActivity : AppCompatActivity() {
             }
         } else {
             Log.w("Stubio", "No suitable P2P player found.")
-            Toast.makeText(this, "DEBUG: No P2P player found, finishing.", Toast.LENGTH_SHORT).show()
+            // Toast.makeText(this, "DEBUG: No P2P player found, finishing.", Toast.LENGTH_SHORT).show()
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                 finish()
             }, 123)
@@ -481,7 +481,7 @@ class MainActivity : AppCompatActivity() {
             val sharedPref = context.getSharedPreferences("StubioPrefs", Context.MODE_PRIVATE)
             sharedPref.edit().putString("stremio_server_ip", serverIp).apply()
             Log.d("Stubio", "ServerConfigReceiver -> Stremio server IP updated to: $serverIp")
-            Toast.makeText(context, "DEBUG: Updated Stremio server IP to: $serverIp", Toast.LENGTH_SHORT).show()
+            // Toast.makeText(context, "DEBUG: Updated Stremio server IP to: $serverIp", Toast.LENGTH_SHORT).show()
         }
     }
 
