@@ -26,26 +26,26 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlin.properties.Delegates
 
 class MainActivity : AppCompatActivity() {
 
-    // region -- Constants & Companion
+    // region -- Companion / Constants
     companion object {
         private const val TAG = "Stubio"
 
+        // Potential YouTube app packages
         const val YT1 = "com.teamsmart.videomanager.tv"
         const val YT2 = "com.google.android.youtube"
+
+        // Potential Torrent/Local stream player packages
         const val TOR1 = "org.videolan.vlc"
         const val TOR2 = "com.mxtech.videoplayer.ad"
 
-        // We'll fill these at runtime
+        // To fill at runtime
         lateinit var pkgYT: String
         lateinit var pkgP2P: String
         var isTOR1 by Delegates.notNull<Boolean>()
-
-        // Cache stremio server
         var cachedStremioServer: String? = "127.0.0.1"
 
         /**
@@ -63,34 +63,41 @@ class MainActivity : AppCompatActivity() {
                             Intent.FLAG_ACTIVITY_NEW_TASK
                 )
             }
-            Log.d(TAG, "sendPlaybackPositionToStremio() - pos:$position dur:$duration")
+            Log.d(TAG, "sendPlaybackPositionToStremio() -> pos:$position dur:$duration")
             context.startActivity(intent)
         }
     }
     // endregion
 
     // region -- Properties & Receivers
+    private var lastKnownPosition: Long = 0L
+    private var lastKnownDuration: Long = 0L
+    private var currentStreamUrl: String? = null
+
     private lateinit var streamResultLauncher: ActivityResultLauncher<Intent>
     private var streamReceiver: StreamResultReceiver? = null
     private var isStreamReceiverRegistered = false
 
     private var playbackMonitoringJob: Job? = null
-    private var lastKnownPosition: Long = 0L
     // endregion
 
-    // region -- Lifecycle Overrides
+    // region -- Lifecycle
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d(TAG, "onCreate() intent: $intent")
+        Log.d(TAG, "onCreate() -> intent: $intent")
 
-        // Prepare references to external player packages (VLC, YouTube)
+        // Choose external player packages from the device installs
         pkgYT = packageManager.getLaunchIntentForPackage(YT1)?.let { YT1 } ?: YT2
         pkgP2P = packageManager.getLaunchIntentForPackage(TOR1)?.let { TOR1 } ?: TOR2
         isTOR1 = (pkgP2P == TOR1)
+        Log.d(TAG, "Set Players: $pkgYT  &  $pkgP2P")
 
-        // Set up the activity result launcher for launching external players
+        // Restore any previously cached position/duration & stream
+        restoreCachedPlaybackData()
+
+        // Prepare external player activity result
         streamResultLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             handleExternalPlayerResult(result.resultCode, result.data)
         }
@@ -103,14 +110,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Called if using `android:launchMode="singleTop"` or `singleTask` in manifest
-     * and new Intents come into an already running Activity. Use this to avoid multiple
-     * onCreate calls for each new video.
+     * onNewIntent called if using `launchMode="singleTop"` or `singleTask`
+     * used to avoid multiple onCreate calls for each new video.
      */
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         if (intent == null) return
-        Log.d(TAG, "onNewIntent() intent: $intent")
+        Log.d(TAG, "onNewIntent() called -> new intent: $intent")
         setIntent(intent) // So getIntent() is updated
         handleIncomingIntent(intent)
     }
@@ -118,12 +124,8 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         Log.d(TAG, "onResume() called")
-
-        // Start monitoring playback if required
         startMonitoringPlayback()
-
-        // Optionally start foreground service if you truly need it
-        // startPlaybackForegroundService()
+        startPlaybackForegroundService()
     }
 
     override fun onPause() {
@@ -135,43 +137,52 @@ class MainActivity : AppCompatActivity() {
     override fun onStop() {
         super.onStop()
         Log.d(TAG, "onStop() called")
-        // Optionally stop the foreground service if playback is not ongoing
-        // stopForegroundServiceIfNeeded()
+        stopForegroundServiceIfNeeded()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "onDestroy() called")
-
-        // Clean up
         lifecycleScope.cancel()
         stopMonitoringPlayback()
         unregisterStreamReceiver()
+        // wipe here may be overkill ?
+        // wipePlaybackDataIfDone()
     }
     // endregion
 
     // region -- Intent Handling
 
     private fun handleIncomingIntent(incomingIntent: Intent) {
-        val uri = incomingIntent.data
-        if (uri == null) {
-            Log.w(TAG, "No URI found in intent. Finishing.")
+        val newUri = incomingIntent.data
+        if (newUri == null) {
+            Log.w(TAG, "handleIncomingIntent -> No URI found, finishing.")
             finish()
             return
         }
 
-        Log.d(TAG, "handleIncomingIntent() -> URI: $uri")
-
-        // Check if the host is allowed
-        val host = uri.host
+        // Check if host is valid and allowed
+        val host = newUri.host
         if (host.isNullOrBlank() || !isAllowedHost(host)) {
-            Log.w(TAG, "Host not allowed: $host. Finishing.")
+            Log.w(TAG, "Host not allowed or is invalid: $host")
             finish()
             return
         }
 
-        // Route to either YouTube or P2P (VLC/MX)
-        routeUri(uri, incomingIntent)
+        // If new incoming stream is different from currently saved stream
+        // reset position/duration to 0 to avoid "resuming" from a prior video.
+        val newStreamUrl = newUri.toString()
+        if (newStreamUrl != currentStreamUrl) {
+            Log.d(TAG, "New stream detected, resetting lastKnownPosition/duration.")
+            resetPlaybackTracking()
+            // Update current stream reference
+            currentStreamUrl = newStreamUrl
+            // Save that new URL to prefs (so we remember across process kill)
+            storeCachedPlaybackData()
+        }
+
+        // Distinguish YouTube vs normal stream
+        routeUri(newUri, incomingIntent)
     }
 
     private fun isAllowedHost(host: String): Boolean {
@@ -184,15 +195,13 @@ class MainActivity : AppCompatActivity() {
                     "[a-zA-Z0-9.-]+\\.stremio\\.com|" +
                     "[a-zA-Z0-9.-]+\\.strem\\.io)$"
         )
-
         val matched = allowedHostPatterns.any { pattern -> host.matches(pattern.toRegex()) }
         val stored = (host == getStoredStremioServer())
-        Log.d(TAG, "isAllowedHost -> matched:$matched stored:$stored for host:$host")
+        Log.d(TAG, "isAllowedHost -> matched:$matched or stored:$stored, host:$host")
         return matched || stored
     }
 
     private fun routeUri(uri: Uri, originalIntent: Intent) {
-        // Check if it’s a YouTube ID
         val youtubeRegex = """/yt/([A-Za-z0-9_-]{11})""".toRegex()
         val match = youtubeRegex.find(uri.toString())
         if (match != null) {
@@ -209,43 +218,35 @@ class MainActivity : AppCompatActivity() {
             setPackage(pkgYT)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
-
         try {
             if (ytIntent.resolveActivity(packageManager) != null) {
-                Log.d(TAG, "launchYouTube() -> Starting $pkgYT with url: $youtubeUrl")
+                Log.d(TAG, "launchYouTube -> Starting $pkgYT with url: $youtubeUrl")
                 startActivity(ytIntent)
             } else {
-                Log.w(TAG, "No activity found to handle YouTube link!")
+                Log.w(TAG, "No handler found for YouTube link! ($youtubeUrl)")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch YouTube: ${e.message}")
         }
 
-        // We’re done with Stubio at this point
         finish()
     }
 
-    /**
-     * Launch VLC or MX Player. We'll request an ActivityResult so we can pass the final position back to Stremio.
-     */
     private fun launchStreamPlayer(originalIntent: Intent) {
         val playerIntent = Intent(Intent.ACTION_VIEW).apply {
-            data = originalIntent.data
-            type = "video/*"
+            setDataAndType(originalIntent.data, "video/*")
             setPackage(pkgP2P)
             putExtras(originalIntent.extras ?: Bundle())
 
             // Insert known position/duration
-            val pos = getCurrentPlaybackPosition()
-            val dur = retrieveCachedPlaybackPosition()
             if (isTOR1) {
-                putExtra("extra_position", pos)
-                putExtra("extra_duration", dur)
-                Log.d(TAG, "launchStreamPlayer -> For VLC: pos:$pos dur:$dur")
+                putExtra("extra_position", lastKnownPosition)
+                putExtra("extra_duration", lastKnownDuration)
+                Log.d(TAG, "launchStreamPlayer -> For VLC pos:$lastKnownPosition dur:$lastKnownDuration")
             } else {
-                putExtra("position", pos)
-                putExtra("duration", dur)
-                Log.d(TAG, "launchStreamPlayer -> For MX: pos:$pos dur:$dur")
+                putExtra("position", lastKnownPosition)
+                putExtra("duration", lastKnownDuration)
+                Log.d(TAG, "launchStreamPlayer -> For MX pos:$lastKnownPosition dur:$lastKnownDuration")
             }
             putExtra("return_result", true)
 
@@ -258,24 +259,27 @@ class MainActivity : AppCompatActivity() {
                 Log.d(TAG, "launchStreamPlayer -> Launching $pkgP2P")
                 streamResultLauncher.launch(playerIntent)
             } else {
-                Log.w(TAG, "No suitable external player found.")
+                Log.w(TAG, "Finishing, no suitable external player found.")
                 finish()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to launch external player: ${e.message}")
+            Log.e(TAG, "Finishing, failed to launch external player: ${e.message}")
             finish()
         }
     }
     // endregion
 
-    // region -- External Player Result Handling
+    // region -- External Player Result
+
+    /**
+     * Called upon exit of external player if it returns a result.
+     */
     private fun handleExternalPlayerResult(resultCode: Int, data: Intent?) {
-        Log.d(TAG, "handleExternalPlayerResult -> resultCode:$resultCode data:$data")
+        Log.d(TAG, "handleExternalPlayerResult -> code:$resultCode data:$data")
 
         if (resultCode == Activity.RESULT_OK || resultCode == Activity.RESULT_CANCELED) {
             data?.extras?.let { extras ->
                 Log.d(TAG, "External player returned extras: $extras")
-
                 // Attempt to read position/duration from whichever fields are relevant
                 val position = if (isTOR1) {
                     extras.getLong("extra_position", -1L)
@@ -287,38 +291,54 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     extras.getLong("duration", -1L)
                 }
-
                 if (position >= 0 && duration > 0) {
-                    // Relay back to Stremio
-                    Log.d(TAG, "Relaying position:$position duration:$duration to Stremio")
-                    sendPlaybackPositionToStremio(this, position, duration)
+                    updatePlaybackPositionFromExternal(position, duration)
                 }
             }
+
+            // If we reached here, it’s presumably a clean exit from external player,
+            // so let's also “wipe” to reset after successful return to Stremio.
+            wipePlaybackDataIfDone()
         } else {
-            Log.w(TAG, "Unhandled result code from external player: $resultCode")
+            Log.w(TAG, "Unhandled result code:$resultCode. No final position retrieved.")
         }
 
-        // Close Stubio after a short delay
+        // Delay for ~1s so Stremio has time to handle the callback
         Handler(mainLooper).postDelayed({
             finish()
-        }, 1000)
+        }, 1234)
     }
     // endregion
 
     // region -- Playback Monitoring
+
     private fun startMonitoringPlayback() {
         if (playbackMonitoringJob?.isActive == true) return
 
         Log.d(TAG, "startMonitoringPlayback()")
         playbackMonitoringJob = lifecycleScope.launch(Dispatchers.IO) {
             while (isActive) {
-                val currentPos = getCurrentPlaybackPosition()
-                Log.d(TAG, "Polling playback position: $currentPos")
+                // Check if broadcast updated a “global” position
+                val broadcastPos = StreamResultReceiver.lastKnownPosition
+                val broadcastDur = StreamResultReceiver.lastKnownDuration
 
-                withContext(Dispatchers.Main) {
-                    // If you genuinely want to push position to Stremio every 10s:
-                    sendPlaybackPositionToStremio(this@MainActivity, currentPos, 0L)
+                // If broadcast gave us something more recent, use it
+                if (broadcastPos > lastKnownPosition) {
+                    lastKnownPosition = broadcastPos
                 }
+                if (broadcastDur > lastKnownDuration) {
+                    lastKnownDuration = broadcastDur
+                }
+
+                // Persist to SharedPreferences so if the app is killed, we don’t lose it
+                storeCachedPlaybackData()
+
+                // (Optional) send to Stremio if you want near real-time scrobbling
+//                withContext(Dispatchers.Main) {
+//                    sendPlaybackPositionToStremio(this@MainActivity, lastKnownPosition, lastKnownDuration)
+//                }
+
+                Log.d(TAG, "Polling playback -> pos:$lastKnownPosition dur:$lastKnownDuration")
                 delay(10_000L)
             }
         }
@@ -330,18 +350,20 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "stopMonitoringPlayback()")
     }
 
-    private fun getCurrentPlaybackPosition(): Long {
-        val lastKnown = StreamResultReceiver.fetchLastKnownPosition()
-        return if (lastKnown > 0) {
-            lastKnown
-        } else {
-            retrieveCachedPlaybackPosition()
+    /**
+     * External player or broadcast gave us a new position/duration - let's store it.
+     */
+    private fun updatePlaybackPositionFromExternal(position: Long, duration: Long) {
+        if (position >= 0) {
+            lastKnownPosition = position
         }
-    }
+        if (duration >= 0) {
+            lastKnownDuration = duration
+        }
+        storeCachedPlaybackData()
 
-    private fun retrieveCachedPlaybackPosition(): Long {
-        val sp = getSharedPreferences("StubioPrefs", Context.MODE_PRIVATE)
-        return sp.getLong("last_playback_position", 0L)
+        // Also send an immediate update to Stremio
+        sendPlaybackPositionToStremio(this, position, duration)
     }
     // endregion
 
@@ -350,30 +372,31 @@ class MainActivity : AppCompatActivity() {
         companion object {
             var lastKnownPosition: Long = 0L
             var lastKnownDuration: Long = 0L
-            fun fetchLastKnownPosition() = lastKnownPosition
         }
 
         override fun onReceive(context: Context, intent: Intent) {
-            Log.d(TAG, "StreamResultReceiver onReceive action:${intent.action} extras:${intent.extras}")
-            val position: Long
-            val duration: Long
+            Log.d(TAG, "StreamResultReceiver -> action:${intent.action} extras:${intent.extras}")
 
-            // For VLC or MX:
             if (intent.action?.endsWith("player.result") == true) {
-                position = intent.getLongExtra("extra_position", -1L)
-                duration = intent.getLongExtra("extra_duration", -1L)
+                // Typically VLC
+                val position = intent.getLongExtra("extra_position", -1L)
+                val duration = intent.getLongExtra("extra_duration", -1L)
+                if (position >= 0 && duration > 0) {
+                    lastKnownPosition = position
+                    lastKnownDuration = duration
+                    Log.d(TAG, "VLC broadcast -> pos:$position dur:$duration")
+                }
             } else if (intent.action?.endsWith("mxplayer.result") == true) {
-                position = intent.getLongExtra("position", -1L)
-                duration = intent.getLongExtra("duration", -1L)
+                // Typically MX
+                val position = intent.getLongExtra("position", -1L)
+                val duration = intent.getLongExtra("duration", -1L)
+                if (position >= 0 && duration > 0) {
+                    lastKnownPosition = position
+                    lastKnownDuration = duration
+                    Log.d(TAG, "MX broadcast -> pos:$position dur:$duration")
+                }
             } else {
                 Log.w(TAG, "Unknown broadcast action: ${intent.action}")
-                return
-            }
-
-            if (position >= 0 && duration > 0) {
-                lastKnownPosition = position
-                lastKnownDuration = duration
-                sendPlaybackPositionToStremio(context, position, duration)
             }
         }
     }
@@ -382,8 +405,11 @@ class MainActivity : AppCompatActivity() {
         if (!isStreamReceiverRegistered) {
             streamReceiver = StreamResultReceiver()
             val filter = IntentFilter().apply {
-                addAction("$pkgP2P.player.result")   // e.g. VLC
-                addAction("$pkgP2P.mxplayer.result") // e.g. MX
+                if (isTOR1) {
+                    addAction("$pkgP2P.player.result")   // e.g., VLC broadcast
+                } else {
+                    addAction("$pkgP2P.mxplayer.result") // e.g., MX broadcast
+                }
             }
             registerReceiver(streamReceiver, filter)
             isStreamReceiverRegistered = true
@@ -400,7 +426,59 @@ class MainActivity : AppCompatActivity() {
     }
     // endregion
 
-    // region -- Stremio Server Caching
+    // region -- Caching & Wiping
+
+    /**
+     * Load last known stream URL/position/duration from SharedPreferences if they exist.
+     */
+    private fun restoreCachedPlaybackData() {
+        val sp = getSharedPreferences("StubioPrefs", MODE_PRIVATE)
+        currentStreamUrl = sp.getString("last_playback_stream", null)
+        lastKnownPosition = sp.getLong("last_playback_position", 0L)
+        lastKnownDuration = sp.getLong("last_playback_duration", 0L)
+        Log.d(TAG, "restoreCachedPlaybackData -> url:$currentStreamUrl pos:$lastKnownPosition dur:$lastKnownDuration")
+    }
+
+    /**
+     * Save the current stream URL/position/duration to SharedPreferences.
+     */
+    private fun storeCachedPlaybackData() {
+        val sp = getSharedPreferences("StubioPrefs", MODE_PRIVATE)
+        sp.edit()
+            .putString("last_playback_stream", currentStreamUrl)
+            .putLong("last_playback_position", lastKnownPosition)
+            .putLong("last_playback_duration", lastKnownDuration)
+            .apply()
+    }
+
+    /**
+     * Reset local state for a new stream or forced manual reset.
+     */
+    private fun resetPlaybackTracking() {
+        lastKnownPosition = 0L
+        lastKnownDuration = 0L
+        // do NOT reset currentStreamUrl here if about to set it to the new one
+    }
+
+    /**
+     * Wipe the stored data after we are done returning position to Stremio,
+     * so the next video starts from scratch (unless we store again).
+     */
+    private fun wipePlaybackDataIfDone() {
+        // Only wipe if we know the user is "done" with the video
+        Log.d(TAG, "wipePlaybackDataIfDone -> clearing stored playback data.")
+        lastKnownPosition = 0L
+        lastKnownDuration = 0L
+        currentStreamUrl = null
+
+        val sp = getSharedPreferences("StubioPrefs", MODE_PRIVATE)
+        sp.edit()
+            .remove("last_playback_stream")
+            .remove("last_playback_position")
+            .remove("last_playback_duration")
+            .apply()
+    }
+
     private fun getStoredStremioServer(): String {
         return cachedStremioServer ?: run {
             val sp = getSharedPreferences("StubioPrefs", Context.MODE_PRIVATE)
@@ -424,7 +502,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun stopForegroundServiceIfNeeded() {
-        // Only stop if you’re sure no playback is needed
+        // Only stop if you’re sure no playback or polling is needed
         stopService(Intent(this, PlaybackForegroundService::class.java))
     }
 
@@ -448,7 +526,7 @@ class MainActivity : AppCompatActivity() {
         private fun buildNotification(): Notification {
             return NotificationCompat.Builder(this, "STUBIO_CHANNEL")
                 .setContentTitle("Stubio Service")
-                .setContentText("Managing playback handoff")
+                .setContentText("Handling playback position and redirection")
                 .setSmallIcon(R.drawable.ic_notification)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build()
