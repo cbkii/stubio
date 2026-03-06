@@ -89,10 +89,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         Log.d(TAG, "onCreate() -> intent: $intent")
 
-        // Choose external player packages from the device installs
-        pkgYT = packageManager.getLaunchIntentForPackage(YT1)?.let { YT1 } ?: YT2
-        pkgP2P = packageManager.getLaunchIntentForPackage(TOR1)?.let { TOR1 } ?: TOR2
-        isTOR1 = (pkgP2P == TOR1)
+        // Choose external player packages from user settings (with blank-skipping fallback)
+        loadPlayerPackages()
         Log.d(TAG, "Set Players: $pkgYT  &  $pkgP2P")
 
         // Restore any previously cached position/duration & stream
@@ -157,7 +155,10 @@ class MainActivity : AppCompatActivity() {
     private fun handleIncomingIntent(incomingIntent: Intent) {
         val newUri = incomingIntent.data
         if (newUri == null) {
-            Log.w(TAG, "handleIncomingIntent -> No URI found, finishing.")
+            // No video URI — user likely opened the app directly from the launcher.
+            // Redirect to SetupActivity so they can configure player packages.
+            Log.d(TAG, "handleIncomingIntent -> No URI, redirecting to SetupActivity.")
+            startActivity(Intent(this, SetupActivity::class.java))
             finish()
             return
         }
@@ -428,6 +429,36 @@ class MainActivity : AppCompatActivity() {
     // endregion
 
     // region -- Caching & Wiping
+
+    /**
+     * Select stream and trailer player packages from user settings stored in SharedPreferences.
+     *
+     * For each slot (stream primary/fallback, trailer primary/fallback) the user may have
+     * saved a package name. Blank entries are silently skipped. The first non-blank entry
+     * that is also installed on the device is used. If none of the user entries are installed,
+     * we fall back to the hardcoded defaults (VLC for streams, SmartTube → YouTube for trailers).
+     */
+    private fun loadPlayerPackages() {
+        val sp = getSharedPreferences(SetupActivity.PREFS_NAME, MODE_PRIVATE)
+
+        val streamPrimary  = sp.getString(SetupActivity.KEY_STREAM_PRIMARY,  "")?.trim() ?: ""
+        val streamFallback = sp.getString(SetupActivity.KEY_STREAM_FALLBACK, "")?.trim() ?: ""
+        val trailerPrimary  = sp.getString(SetupActivity.KEY_TRAILER_PRIMARY,  "")?.trim() ?: ""
+        val trailerFallback = sp.getString(SetupActivity.KEY_TRAILER_FALLBACK, "")?.trim() ?: ""
+
+        // Walk the candidate list, skip blanks, pick the first installed one
+        pkgP2P = listOf(streamPrimary, streamFallback, TOR1, TOR2)
+            .filter { it.isNotBlank() }
+            .firstOrNull { packageManager.getLaunchIntentForPackage(it) != null }
+            ?: TOR1
+
+        pkgYT = listOf(trailerPrimary, trailerFallback, YT1, YT2)
+            .filter { it.isNotBlank() }
+            .firstOrNull { packageManager.getLaunchIntentForPackage(it) != null }
+            ?: YT2
+
+        isTOR1 = (pkgP2P == TOR1)
+    }
 
     /**
      * Load last known stream URL/position/duration from SharedPreferences if they exist.

@@ -10,17 +10,20 @@
     <!-- Declare permission on old systems-->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Ensure package visibility for app interactions -->
+    <!-- Ensure package visibility for app interactions.
+         Note: user-configured packages are not listed here since they are dynamic;
+         Android 11+ package visibility only affects getLaunchIntentForPackage() checks,
+         which we gracefully handle by skipping unavailable packages. -->
     <queries>
         <package android:name="com.teamsmart.videomanager.tv" />
         <package android:name="org.videolan.vlc" />
         <package android:name="com.google.android.youtube" />
         <package android:name="com.stremio.one" />
-        <!-- apps for potential future inclusion as fallbacks
+        <!-- Common alternative players -->
+        <package android:name="com.mxtech.videoplayer.ad" />
         <package android:name="com.mxtech.videoplayer.ad.tv" />
         <package android:name="com.mxtech.videoplayer.pro.tv" />
         <package android:name="org.xbmc.kodi" />
-        -->
     </queries>
 
     <application
@@ -34,6 +37,21 @@
         android:process=":stubio"
         tools:targetApi="31">
 
+        <!-- SetupActivity: launched from the home-screen icon.
+             Provides the purple GUI for configuring player package names. -->
+        <activity
+            android:name=".SetupActivity"
+            android:exported="true"
+            android:theme="@style/Theme.StubioSetup"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- MainActivity: handles video intents from Stremio silently (no UI). -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
