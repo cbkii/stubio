@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="com.intentrouter.stubio">
+
+    <!-- Required permission for network access -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <!-- Declare permission on old systems-->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Ensure package visibility for app interactions -->
+    <queries>
+        <package android:name="com.teamsmart.videomanager.tv" />
+        <package android:name="org.videolan.vlc" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.stremio.one" />
+        <!-- apps for potential future inclusion as fallbacks
+        <package android:name="com.mxtech.videoplayer.ad.tv" />
+        <package android:name="com.mxtech.videoplayer.pro.tv" />
+        <package android:name="org.xbmc.kodi" />
+        -->
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:theme="@style/Theme.Transparent"
+        android:usesCleartextTraffic="true"
+        android:process=":stubio"
+        tools:targetApi="31">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Transparent">
+
+            <intent-filter android:autoVerify="false" >
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <!-- General HTTP and HTTPS links -->
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:scheme="intent" />
+                <!-- Covering common/default IPs -->
+                <data android:host="127.0.0.1" />
+                <data android:host="localhost" />
+                <data android:host="*.local" />
+                <data android:host="*.stremio.com" />
+                <data android:host="*.strem.io" />
+                <data android:host="*" />
+                <!-- Handle Stremio deep links -->
+                <data android:scheme="stremio" />
+                <data android:host="playback" />
+                <!-- Handle any path for parsing/routing -->
+                <data android:pathPattern=".*" />
+                <!-- Handle video file extensions, media URIs for local and content-based files -->
+                <data android:mimeType="video/*" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+            </intent-filter>
+
+        </activity>
+        <!-- Declare VLC return playback position to Stremio -->
+        <receiver android:name=".MainActivity$StreamResultReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="org.videolan.vlc.player.result"/>
+            </intent-filter>
+        </receiver>
+        <!-- Declare User custom settings-->
+        <receiver android:name=".MainActivity$ServerConfigReceiver" android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.intentrouter.stubio.SET_SERVER"/>
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>
