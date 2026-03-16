@@ -10,3 +10,6 @@ local.properties
 /app/debug
 /app/release
 /.idea
+/secrets
+secrets/*
+/secrets/*
