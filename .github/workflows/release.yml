@@ -1,0 +1,146 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+# Prevent concurrent release jobs on main to avoid tag/release collisions.
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Skip commits made by the github-actions bot (e.g. the tag push itself triggers push events).
+    if: github.actor != 'github-actions[bot]'
+
+    steps:
+      - name: Checkout with full history and tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Calculate next semantic version tag
+        id: version
+        run: |
+          # Find the latest tag matching v* (semver style)
+          LATEST_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n1)
+
+          if [ -z "$LATEST_TAG" ]; then
+            NEXT_TAG="v0.1.0"
+          else
+            # Parse major.minor.patch and bump patch
+            VERSION="${LATEST_TAG#v}"
+            MAJOR=$(echo "$VERSION" | cut -d. -f1)
+            MINOR=$(echo "$VERSION" | cut -d. -f2)
+            PATCH=$(echo "$VERSION" | cut -d. -f3)
+            NEXT_PATCH=$((PATCH + 1))
+            NEXT_TAG="v${MAJOR}.${MINOR}.${NEXT_PATCH}"
+          fi
+
+          VERSION_NAME="${NEXT_TAG#v}"
+          echo "tag=${NEXT_TAG}" >> "$GITHUB_OUTPUT"
+          echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          echo "Next release tag: ${NEXT_TAG}"
+
+      - name: Create and push release tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Validate signing secrets
+        run: |
+          if [ -z "${{ secrets.ANDROID_SIGNING_STORE_FILE }}" ]; then
+            echo "ERROR: Secret ANDROID_SIGNING_STORE_FILE is not set." >&2
+            exit 1
+          fi
+          if [ -z "${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}" ]; then
+            echo "ERROR: Secret ANDROID_SIGNING_STORE_PASSWORD is not set." >&2
+            exit 1
+          fi
+          if [ -z "${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}" ]; then
+            echo "ERROR: Secret ANDROID_SIGNING_KEY_ALIAS is not set." >&2
+            exit 1
+          fi
+          if [ -z "${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}" ]; then
+            echo "ERROR: Secret ANDROID_SIGNING_KEY_PASSWORD is not set." >&2
+            exit 1
+          fi
+
+      - name: Decode keystore to temporary file
+        run: |
+          KEYSTORE_PATH="${RUNNER_TEMP}/release.keystore"
+          echo "${{ secrets.ANDROID_SIGNING_STORE_FILE }}" | base64 --decode > "$KEYSTORE_PATH"
+          echo "KEYSTORE_PATH=${KEYSTORE_PATH}" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        env:
+          ANDROID_SIGNING_STORE_FILE: ${{ env.KEYSTORE_PATH }}
+          ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
+          ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
+          ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          VERSION_CODE: ${{ github.run_number }}
+        run: ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Verify APK exists
+        run: |
+          # assembleRelease produces app-release.apk; be explicit to avoid ambiguity
+          APK_PATH="app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$APK_PATH" ]; then
+            echo "ERROR: Expected APK not found at ${APK_PATH}" >&2
+            echo "Contents of app/build/outputs/apk/release (if it exists):"
+            ls -la "app/build/outputs/apk/release" 2>/dev/null || true
+            exit 1
+          fi
+          echo "APK_PATH=${APK_PATH}" >> "$GITHUB_ENV"
+          echo "Found APK: ${APK_PATH}"
+
+      - name: Verify APK is signed
+        run: |
+          # Find the latest build-tools apksigner by comparing version directories explicitly
+          APKSIGNER=""
+          if [ -d "$ANDROID_SDK_ROOT/build-tools" ]; then
+            LATEST_BT=$(ls -1 "$ANDROID_SDK_ROOT/build-tools" | \
+              awk -F. '{printf "%05d%05d%05d %s\n", $1, $2, $3, $0}' | \
+              sort -k1,1n | tail -n1 | awk '{print $2}')
+            if [ -n "$LATEST_BT" ] && [ -x "$ANDROID_SDK_ROOT/build-tools/$LATEST_BT/apksigner" ]; then
+              APKSIGNER="$ANDROID_SDK_ROOT/build-tools/$LATEST_BT/apksigner"
+            fi
+          fi
+          if [ -n "$APKSIGNER" ]; then
+            "$APKSIGNER" verify --verbose "$APK_PATH"
+          else
+            echo "apksigner not found; skipping signature verification"
+          fi
+
+      - name: Create GitHub Release and attach APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          files: ${{ env.APK_PATH }}
+
+      - name: Upload APK as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stubio-${{ steps.version.outputs.tag }}-release
+          path: ${{ env.APK_PATH }}
+          retention-days: 30
