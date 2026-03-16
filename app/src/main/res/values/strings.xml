@@ -1,0 +1,24 @@
+<resources>
+    <string name="app_name">Stubio</string>
+
+    <!-- Setup screen -->
+    <string name="setup_title">Stubio Setup</string>
+    <string name="setup_subtitle">Configure your preferred external players.\nLeave blank to use defaults.</string>
+
+    <string name="section_streams">Streams</string>
+    <string name="section_trailers">Trailers</string>
+
+    <string name="label_primary_player">Primary Player — package name</string>
+    <string name="label_fallback_player">Fallback Player — package name</string>
+
+    <string name="hint_stream_primary">e.g. org.videolan.vlc</string>
+    <string name="hint_stream_fallback">Default: org.videolan.vlc</string>
+    <string name="hint_trailer_primary">e.g. com.teamsmart.videomanager.tv</string>
+    <string name="hint_trailer_fallback">Default: com.teamsmart.videomanager.tv</string>
+
+    <string name="btn_save">Save Settings</string>
+    <string name="saved_confirmation">Settings saved!</string>
+
+    <string name="info_streams">Used for torrent / direct streams from Stremio.</string>
+    <string name="info_trailers">Used for YouTube trailers from Stremio.</string>
+</resources>

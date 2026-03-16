@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Used by MainActivity when routing video intents — transparent, no UI -->
+    <style name="Theme.Transparent" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+
+    <!-- Used by SetupActivity — purple, full-screen -->
+    <style name="Theme.StubioSetup" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/purple_bg_deep</item>
+        <item name="android:colorPrimary">@color/purple_primary</item>
+        <item name="android:colorPrimaryDark">@color/purple_primary_dark</item>
+        <item name="android:colorAccent">@color/purple_primary</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:textColorHint">@color/text_hint</item>
+        <item name="android:editTextColor">@color/text_primary</item>
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+</resources>
