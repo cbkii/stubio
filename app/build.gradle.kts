@@ -89,6 +89,15 @@ android {
     }
 }
 
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        val versionName = variant.outputs.single().versionName.orElse(variant.versionName).get()
+        variant.outputs.forEach { output ->
+            output.outputFileName.set("stubio-$versionName.apk")
+        }
+    }
+}
+
 dependencies {
     //noinspection UseTomlInstead,GradleDependency
     implementation("androidx.appcompat:appcompat:1.3.0")
