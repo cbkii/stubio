@@ -99,6 +99,9 @@ jobs:
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > "$KEYSTORE_PATH"
           echo "KEYSTORE_PATH=${KEYSTORE_PATH}" >> "$GITHUB_ENV"
 
+      - name: Ensure Gradle wrapper is executable
+        run: chmod +x ./gradlew
+
       - name: Build signed release APK
         env:
           ANDROID_SIGNING_STORE_FILE: ${{ env.KEYSTORE_PATH }}
