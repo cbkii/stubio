@@ -38,19 +38,24 @@ jobs:
       - name: Calculate next semantic version tag
         id: version
         run: |
-          # Find the latest tag matching v* (semver style)
-          LATEST_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n1)
-
-          if [ -z "$LATEST_TAG" ]; then
-            NEXT_TAG="v0.1.0"
+          # On rerun, reuse any release tag already pointing at this commit.
+          EXISTING_TAG=$(git tag --points-at HEAD --list 'v*' | head -n1)
+          if [ -n "$EXISTING_TAG" ]; then
+            NEXT_TAG="$EXISTING_TAG"
+            echo "Reusing existing tag on this commit: ${NEXT_TAG}"
           else
-            # Parse major.minor.patch and bump patch
-            VERSION="${LATEST_TAG#v}"
-            MAJOR=$(echo "$VERSION" | cut -d. -f1)
-            MINOR=$(echo "$VERSION" | cut -d. -f2)
-            PATCH=$(echo "$VERSION" | cut -d. -f3)
-            NEXT_PATCH=$((PATCH + 1))
-            NEXT_TAG="v${MAJOR}.${MINOR}.${NEXT_PATCH}"
+            # Find the latest tag matching v* (semver style) and bump patch.
+            LATEST_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n1)
+            if [ -z "$LATEST_TAG" ]; then
+              NEXT_TAG="v0.1.0"
+            else
+              VERSION="${LATEST_TAG#v}"
+              MAJOR=$(echo "$VERSION" | cut -d. -f1)
+              MINOR=$(echo "$VERSION" | cut -d. -f2)
+              PATCH=$(echo "$VERSION" | cut -d. -f3)
+              NEXT_PATCH=$((PATCH + 1))
+              NEXT_TAG="v${MAJOR}.${MINOR}.${NEXT_PATCH}"
+            fi
           fi
 
           VERSION_NAME="${NEXT_TAG#v}"
@@ -62,40 +67,44 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "${{ steps.version.outputs.tag }}"
-          git push origin "${{ steps.version.outputs.tag }}"
+          if git rev-parse "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "Tag ${{ steps.version.outputs.tag }} already exists; skipping creation."
+          else
+            git tag "${{ steps.version.outputs.tag }}"
+            git push origin "${{ steps.version.outputs.tag }}"
+          fi
 
       - name: Validate signing secrets
         run: |
-          if [ -z "${{ secrets.ANDROID_SIGNING_STORE_FILE }}" ]; then
-            echo "ERROR: Secret ANDROID_SIGNING_STORE_FILE is not set." >&2
+          if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "ERROR: Secret ANDROID_KEYSTORE_BASE64 is not set." >&2
             exit 1
           fi
-          if [ -z "${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}" ]; then
-            echo "ERROR: Secret ANDROID_SIGNING_STORE_PASSWORD is not set." >&2
+          if [ -z "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" ]; then
+            echo "ERROR: Secret ANDROID_KEYSTORE_PASSWORD is not set." >&2
             exit 1
           fi
-          if [ -z "${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}" ]; then
-            echo "ERROR: Secret ANDROID_SIGNING_KEY_ALIAS is not set." >&2
+          if [ -z "${{ secrets.ANDROID_KEY_ALIAS }}" ]; then
+            echo "ERROR: Secret ANDROID_KEY_ALIAS is not set." >&2
             exit 1
           fi
-          if [ -z "${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}" ]; then
-            echo "ERROR: Secret ANDROID_SIGNING_KEY_PASSWORD is not set." >&2
+          if [ -z "${{ secrets.ANDROID_KEY_PASSWORD }}" ]; then
+            echo "ERROR: Secret ANDROID_KEY_PASSWORD is not set." >&2
             exit 1
           fi
 
       - name: Decode keystore to temporary file
         run: |
           KEYSTORE_PATH="${RUNNER_TEMP}/release.keystore"
-          echo "${{ secrets.ANDROID_SIGNING_STORE_FILE }}" | base64 --decode > "$KEYSTORE_PATH"
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > "$KEYSTORE_PATH"
           echo "KEYSTORE_PATH=${KEYSTORE_PATH}" >> "$GITHUB_ENV"
 
       - name: Build signed release APK
         env:
           ANDROID_SIGNING_STORE_FILE: ${{ env.KEYSTORE_PATH }}
-          ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
-          ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
-          ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
+          ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           VERSION_NAME: ${{ steps.version.outputs.version_name }}
           VERSION_CODE: ${{ github.run_number }}
         run: ./gradlew :app:assembleRelease --no-daemon
