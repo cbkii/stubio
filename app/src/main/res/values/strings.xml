@@ -1,9 +1,8 @@
 <resources>
     <string name="app_name">Stubio</string>
 
-    <!-- Setup screen -->
     <string name="setup_title">Stubio Setup</string>
-    <string name="setup_subtitle">Configure your preferred external players.\nLeave blank to use defaults.</string>
+    <string name="setup_subtitle">Remote-friendly package routing setup. Use the picker icon to choose installed apps quickly.</string>
 
     <string name="section_streams">Streams</string>
     <string name="section_trailers">Trailers</string>
@@ -15,6 +14,11 @@
     <string name="hint_stream_fallback">Default: org.videolan.vlc</string>
     <string name="hint_trailer_primary">e.g. com.teamsmart.videomanager.tv</string>
     <string name="hint_trailer_fallback">Default: com.teamsmart.videomanager.tv</string>
+
+    <string name="btn_pick_app">Pick from installed apps</string>
+    <string name="app_picker_title">Installed apps</string>
+    <string name="app_picker_close">Close</string>
+    <string name="no_apps_found">No launcher apps were found on this device.</string>
 
     <string name="btn_save">Save Settings</string>
     <string name="saved_confirmation">Settings saved!</string>
