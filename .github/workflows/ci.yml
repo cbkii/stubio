@@ -1,0 +1,58 @@
+name: Android CI
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install required Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Lint and test debug
+        run: ./gradlew :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --no-daemon
+
+      - name: Upload debug lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports-debug
+          path: |
+            app/build/reports/lint-results-debug.html
+            app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Validate release build
+        run: ./gradlew :app:lintRelease :app:assembleRelease --no-daemon
+
+      - name: Upload release lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports-release
+          path: |
+            app/build/reports/lint-results-release.html
+            app/build/intermediates/lint_intermediate_text_report/release/lintReportRelease/lint-results-release.txt
+          if-no-files-found: ignore
+          retention-days: 14

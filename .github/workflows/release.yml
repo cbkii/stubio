@@ -104,13 +104,14 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android build-tools
+      - name: Install required Android SDK packages
         run: |
           set -euo pipefail
           if command -v sdkmanager >/dev/null 2>&1; then
-            sdkmanager --install "build-tools;35.0.0"
+            yes | sdkmanager --licenses >/dev/null || true
+            sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
           else
-            echo "sdkmanager is unavailable; proceeding with preinstalled build-tools if present."
+            echo "sdkmanager is unavailable; proceeding with preinstalled Android SDK packages if present."
           fi
 
       - name: Resolve release tag/version
@@ -243,6 +244,12 @@ jobs:
 
       - name: Ensure Gradle wrapper is executable
         run: chmod +x ./gradlew
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run release lint
+        run: ./gradlew :app:lintRelease --no-daemon
 
       - name: Build signed release APK
         if: steps.signing.outputs.enabled == 'true'
