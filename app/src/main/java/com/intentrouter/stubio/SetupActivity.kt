@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -19,17 +20,6 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 
-/**
- * SetupActivity — launched when the user opens Stubio from the home screen launcher icon.
- *
- * Allows the user to configure preferred package names for:
- *   - Stream player (primary + fallback, default fallback: VLC)
- *   - Trailer player (primary + fallback, default fallback: SmartTube)
- *
- * Settings are persisted in "StubioPrefs" SharedPreferences and are picked up
- * by MainActivity when routing video intents. Blank fields are silently skipped
- * and the next non-blank / default-installed package is used instead.
- */
 class SetupActivity : AppCompatActivity() {
 
     private lateinit var editStreamPrimary: EditText
@@ -47,6 +37,7 @@ class SetupActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_setup)
+        title = getString(R.string.setup_title)
 
         editStreamPrimary = findViewById(R.id.editStreamPrimary)
         editStreamFallback = findViewById(R.id.editStreamFallback)
@@ -68,9 +59,17 @@ class SetupActivity : AppCompatActivity() {
         btnPickTrailerFallback.setOnClickListener { showAppPicker(editTrailerFallback) }
 
         btnSave.setOnClickListener { saveSettings() }
-    }
+        btnSave.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)) {
+                saveSettings()
+                true
+            } else {
+                false
+            }
+        }
 
-    // region -- App picker
+        editStreamPrimary.requestFocus()
+    }
 
     private fun showAppPicker(targetField: EditText) {
         val launchableApps = loadLaunchableApps()
@@ -83,13 +82,12 @@ class SetupActivity : AppCompatActivity() {
         val appGrid = dialogView.findViewById<GridView>(R.id.gridApps)
         val emptyText = dialogView.findViewById<TextView>(R.id.textNoApps)
 
-        appGrid.adapter = LaunchableAppsAdapter(
-            inflater = layoutInflater,
-            apps = launchableApps
-        )
+        appGrid.adapter = LaunchableAppsAdapter(layoutInflater, launchableApps)
+        appGrid.numColumns = GridView.AUTO_FIT
+        appGrid.columnWidth = resources.getDimensionPixelSize(R.dimen.app_picker_tile_width)
 
-        emptyText.visibility = if (launchableApps.isEmpty()) View.VISIBLE else View.GONE
-        appGrid.visibility = if (launchableApps.isEmpty()) View.GONE else View.VISIBLE
+        emptyText.visibility = View.GONE
+        appGrid.visibility = View.VISIBLE
 
         val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.app_picker_title)
@@ -108,14 +106,10 @@ class SetupActivity : AppCompatActivity() {
 
     private fun loadLaunchableApps(): List<LaunchableApp> {
         val pm = packageManager
-
-        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val leanbackIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
         val launcherApps = queryActivities(pm, launcherIntent)
-        val leanbackApps = queryActivities(pm, leanbackIntent)
 
-        return (launcherApps + leanbackApps)
+        return launcherApps
             .distinctBy { it.activityInfo.packageName }
             .map {
                 LaunchableApp(
@@ -127,10 +121,6 @@ class SetupActivity : AppCompatActivity() {
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.appName })
     }
 
-    // endregion
-
-    // region -- Load / Save
-
     private fun loadSavedSettings() {
         val sp = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         editStreamPrimary.setText(sp.getString(KEY_STREAM_PRIMARY, ""))
@@ -140,6 +130,18 @@ class SetupActivity : AppCompatActivity() {
     }
 
     private fun saveSettings() {
+        val invalidField = listOf(editStreamPrimary, editStreamFallback, editTrailerPrimary, editTrailerFallback)
+            .firstOrNull { field ->
+                val value = field.text.toString().trim()
+                value.isNotEmpty() && !value.matches(PACKAGE_PATTERN)
+            }
+
+        if (invalidField != null) {
+            invalidField.requestFocus()
+            Toast.makeText(this, R.string.invalid_package_name, Toast.LENGTH_LONG).show()
+            return
+        }
+
         val sp = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         sp.edit()
             .putString(KEY_STREAM_PRIMARY, editStreamPrimary.text.toString().trim())
@@ -151,31 +153,18 @@ class SetupActivity : AppCompatActivity() {
         Toast.makeText(this, R.string.saved_confirmation, Toast.LENGTH_SHORT).show()
     }
 
-    // endregion
-
     companion object {
         const val PREFS_NAME = "StubioPrefs"
-
         const val KEY_STREAM_PRIMARY = "stream_player_primary"
         const val KEY_STREAM_FALLBACK = "stream_player_fallback"
         const val KEY_TRAILER_PRIMARY = "trailer_player_primary"
         const val KEY_TRAILER_FALLBACK = "trailer_player_fallback"
+
+        private val PACKAGE_PATTERN = Regex("^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+")
     }
 }
 
 private fun queryActivities(pm: PackageManager, intent: Intent): List<android.content.pm.ResolveInfo> {
-    val allMatches = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-        pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong()))
-    } else {
-        @Suppress("DEPRECATION")
-        pm.queryIntentActivities(intent, PackageManager.MATCH_ALL)
-    }
-
-    if (allMatches.isNotEmpty()) {
-        return allMatches
-    }
-
-    // Fallback for older/quirky TV builds where MATCH_ALL may still return an empty list.
     return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
         pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong()))
     } else {
@@ -196,22 +185,17 @@ private class LaunchableAppsAdapter(
 ) : BaseAdapter() {
 
     override fun getCount(): Int = apps.size
-
     override fun getItem(position: Int): LaunchableApp = apps[position]
-
     override fun getItemId(position: Int): Long = position.toLong()
 
     override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
         val view = convertView ?: inflater.inflate(R.layout.item_app_tile, parent, false)
         val app = getItem(position)
 
-        val icon = view.findViewById<ImageView>(R.id.imageAppIcon)
-        val title = view.findViewById<TextView>(R.id.textAppName)
-        val pkg = view.findViewById<TextView>(R.id.textPackageName)
-
-        icon.setImageDrawable(app.icon)
-        title.text = app.appName
-        pkg.text = app.packageName
+        view.findViewById<ImageView>(R.id.imageAppIcon).setImageDrawable(app.icon)
+        view.findViewById<TextView>(R.id.textAppName).text = app.appName
+        view.findViewById<TextView>(R.id.textPackageName).text = app.packageName
+        view.contentDescription = "${app.appName}, ${app.packageName}"
 
         return view
     }

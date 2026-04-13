@@ -3,28 +3,30 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="10dp">
+    android:padding="16dp">
 
     <TextView
         android:id="@+id/textNoApps"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/no_apps_found"
         android:gravity="center"
         android:padding="24dp"
+        android:text="@string/no_apps_found"
+        android:textColor="@color/text_primary"
+        android:textSize="20sp"
         android:visibility="gone" />
 
     <GridView
         android:id="@+id/gridApps"
         android:layout_width="match_parent"
-        android:layout_height="380dp"
-        android:horizontalSpacing="10dp"
-        android:verticalSpacing="10dp"
-        android:numColumns="3"
-        android:stretchMode="columnWidth"
+        android:layout_height="460dp"
         android:clipToPadding="false"
-        android:padding="4dp"
+        android:gravity="center"
+        android:horizontalSpacing="14dp"
         android:listSelector="@android:color/transparent"
-        android:focusable="true" />
+        android:numColumns="auto_fit"
+        android:padding="8dp"
+        android:stretchMode="columnWidth"
+        android:verticalSpacing="14dp" />
 
 </LinearLayout>

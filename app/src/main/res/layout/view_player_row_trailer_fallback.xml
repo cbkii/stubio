@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="14dp"
+    android:orientation="vertical">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:text="@string/label_trailer_fallback"
+        android:textColor="@color/text_secondary"
+        android:textSize="16sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:orientation="horizontal">
+
+        <EditText
+            android:id="@+id/editTrailerFallback"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="12dp"
+            android:layout_weight="1"
+            android:autofillHints=""
+            android:background="@drawable/edit_text_bg"
+            android:hint="@string/hint_trailer_fallback"
+            android:imeOptions="actionDone"
+            android:inputType="text"
+            android:maxLines="1"
+            android:nextFocusDown="@id/btnSave"
+            android:nextFocusRight="@id/btnPickTrailerFallback"
+            android:paddingHorizontal="16dp"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_hint"
+            android:textSize="18sp" />
+
+        <ImageButton
+            android:id="@+id/btnPickTrailerFallback"
+            android:layout_width="80dp"
+            android:layout_height="match_parent"
+            android:background="@drawable/picker_button_bg"
+            android:contentDescription="@string/btn_pick_trailer_fallback"
+            android:nextFocusDown="@id/btnSave"
+            android:nextFocusLeft="@id/editTrailerFallback"
+            android:src="@android:drawable/ic_menu_search"
+            android:tint="@color/text_primary" />
+    </LinearLayout>
+</LinearLayout>

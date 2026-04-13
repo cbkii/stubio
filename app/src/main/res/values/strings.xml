@@ -1,28 +1,35 @@
 <resources>
     <string name="app_name">Stubio</string>
 
-    <string name="setup_title">Stubio Setup</string>
-    <string name="setup_subtitle">Remote-friendly package routing setup. Use the picker icon to choose installed apps quickly.</string>
+    <string name="setup_title">Stubio TV Setup</string>
+    <string name="setup_subtitle">Configure which installed TV apps should handle streams and trailers. Navigation is fully remote-friendly.</string>
 
     <string name="section_streams">Streams</string>
     <string name="section_trailers">Trailers</string>
 
-    <string name="label_primary_player">Primary Player — package name</string>
-    <string name="label_fallback_player">Fallback Player — package name</string>
+    <string name="label_stream_primary">Primary stream player package</string>
+    <string name="label_stream_fallback">Fallback stream player package</string>
+    <string name="label_trailer_primary">Primary trailer player package</string>
+    <string name="label_trailer_fallback">Fallback trailer player package</string>
 
-    <string name="hint_stream_primary">e.g. org.videolan.vlc</string>
-    <string name="hint_stream_fallback">Default: org.videolan.vlc</string>
-    <string name="hint_trailer_primary">e.g. com.teamsmart.videomanager.tv</string>
-    <string name="hint_trailer_fallback">Default: com.teamsmart.videomanager.tv</string>
+    <string name="hint_stream_primary">org.videolan.vlc</string>
+    <string name="hint_stream_fallback">Fallback: org.videolan.vlc</string>
+    <string name="hint_trailer_primary">com.teamsmart.videomanager.tv</string>
+    <string name="hint_trailer_fallback">Fallback: com.google.android.youtube</string>
 
-    <string name="btn_pick_app">Pick from installed apps</string>
-    <string name="app_picker_title">Installed apps</string>
+    <string name="btn_pick_stream_primary">Pick primary stream player</string>
+    <string name="btn_pick_stream_fallback">Pick fallback stream player</string>
+    <string name="btn_pick_trailer_primary">Pick primary trailer player</string>
+    <string name="btn_pick_trailer_fallback">Pick fallback trailer player</string>
+
+    <string name="app_picker_title">Installed TV apps</string>
     <string name="app_picker_close">Close</string>
-    <string name="no_apps_found">No launcher apps were found on this device.</string>
+    <string name="no_apps_found">No launchable TV apps were found on this device.</string>
 
-    <string name="btn_save">Save Settings</string>
-    <string name="saved_confirmation">Settings saved!</string>
+    <string name="btn_save">Save settings</string>
+    <string name="saved_confirmation">Settings saved.</string>
+    <string name="invalid_package_name">One or more package names are invalid. Use values such as org.videolan.vlc.</string>
 
-    <string name="info_streams">Used for torrent / direct streams from Stremio.</string>
-    <string name="info_trailers">Used for YouTube trailers from Stremio.</string>
+    <string name="info_streams">Used for movie and episode playback intents.</string>
+    <string name="info_trailers">Used when Stubio routes trailer links to YouTube-compatible apps.</string>
 </resources>

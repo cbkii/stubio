@@ -1,0 +1,3 @@
+<resources>
+    <dimen name="app_picker_tile_width">280dp</dimen>
+</resources>
