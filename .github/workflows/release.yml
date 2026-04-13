@@ -251,6 +251,16 @@ jobs:
       - name: Run release lint
         run: ./gradlew :app:lintRelease --no-daemon
 
+      - name: Upload release lint report
+        if: always()
+        id: lint_upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report-release-${{ steps.version.outputs.tag }}
+          path: app/build/reports/lint-results-release.html
+          if-no-files-found: ignore
+          retention-days: 60
+
       - name: Build signed release APK
         if: steps.signing.outputs.enabled == 'true'
         env:
@@ -269,31 +279,34 @@ jobs:
           VERSION_CODE: ${{ github.run_number }}
         run: ./gradlew :app:assembleRelease --no-daemon
 
-      - name: Resolve APK artifact path
+      - name: Rename APK to release naming convention
         id: apk
         run: |
           set -euo pipefail
 
-          EXPECTED_APK="app/build/outputs/apk/release/stubio-${{ steps.version.outputs.version_name }}.apk"
-          if [ -f "$EXPECTED_APK" ]; then
-            APK_PATH="$EXPECTED_APK"
-            echo "used_fallback=false" >> "$GITHUB_OUTPUT"
+          TAG="${{ steps.version.outputs.tag }}"
+          APK_TAG_SLUG="${TAG//./-}"
+
+          if [ "${{ steps.signing.outputs.enabled }}" = "true" ]; then
+            SUFFIX=""
           else
-            ALT_APK=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n1 || true)
-            if [ -n "$ALT_APK" ]; then
-              APK_PATH="$ALT_APK"
-              echo "Expected APK filename missing; using fallback APK: ${APK_PATH}"
-              echo "used_fallback=true" >> "$GITHUB_OUTPUT"
-              echo "- ⚠️ APK path fallback: expected filename was missing; used discovered APK artifact." >> "${RUNNER_TEMP}/adaptive-report.md"
-            else
-              echo "ERROR: No APK file found under app/build/outputs/apk/release." >&2
-              ls -la "app/build/outputs/apk/release" 2>/dev/null || true
-              exit 1
-            fi
+            SUFFIX="-unsigned"
           fi
 
-          echo "APK_PATH=${APK_PATH}" >> "$GITHUB_ENV"
-          echo "Found APK: ${APK_PATH}"
+          FINAL_APK_NAME="stubio-${APK_TAG_SLUG}${SUFFIX}.apk"
+
+          FOUND_APK=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n1 || true)
+          if [ -z "$FOUND_APK" ]; then
+            echo "ERROR: No APK file found under app/build/outputs/apk/release." >&2
+            ls -la "app/build/outputs/apk/release" 2>/dev/null || true
+            exit 1
+          fi
+
+          DEST_PATH="app/build/outputs/apk/release/${FINAL_APK_NAME}"
+          mv "$FOUND_APK" "$DEST_PATH"
+
+          echo "APK_PATH=${DEST_PATH}" >> "$GITHUB_ENV"
+          echo "Renamed APK to: ${DEST_PATH}"
 
       - name: Verify APK is signed
         if: steps.signing.outputs.enabled == 'true'
@@ -323,15 +336,15 @@ jobs:
 
       - name: Prepare release notes body
         id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
           TAG="${{ steps.version.outputs.tag }}"
+          TAG="${TAG:-(unknown)}"
           TARGET_SHA="${{ steps.context.outputs.target_sha }}"
-          TAGGED_TREE_URL="https://github.com/${{ github.repository }}/tree/${TAG}"
-          SOURCE_LABEL="${{ steps.context.outputs.source }}"
-          DRAFT_LABEL="${{ steps.context.outputs.draft }}"
-          SIGNING_LABEL="${{ steps.signing.outputs.enabled }}"
+          TARGET_SHA="${TARGET_SHA:-(unknown)}"
 
           if [ "${{ steps.version.outputs.tag_bump_count }}" != "0" ]; then
             echo "- ⚠️ Tag adaptation: bumped patch ${{ steps.version.outputs.tag_bump_count }} time(s) to avoid collisions." >> "${RUNNER_TEMP}/adaptive-report.md"
@@ -340,20 +353,21 @@ jobs:
           fi
           echo "- ℹ️ Tag strategy: ${{ steps.version.outputs.tag_note }}" >> "${RUNNER_TEMP}/adaptive-report.md"
 
+          GENERATED_NOTES=""
+          if [ "$TAG" != "(unknown)" ] && [ "$TARGET_SHA" != "(unknown)" ]; then
+            GENERATED_NOTES=$(gh api "repos/${{ github.repository }}/releases/generate-notes" \
+              -f "tag_name=${TAG}" \
+              -f "target_commitish=${TARGET_SHA}" \
+              --jq '.body' 2>/dev/null || true)
+          fi
+
+          # Strip the original "## What's Changed" heading and prepend with emoji version
+          PROCESSED=$(echo "$GENERATED_NOTES" | sed "/^## What's Changed/d" || true)
+
           {
-            echo "## 🚀 Release Summary"
-            echo "- **Tag:** \`${TAG}\`"
-            echo "- **Target commit:** \`${TARGET_SHA}\`"
-            echo "- **Trigger source:** \`${SOURCE_LABEL}\`"
-            echo "- **Draft release:** \`${DRAFT_LABEL}\`"
-            echo "- **Signing enabled:** \`${SIGNING_LABEL}\`"
+            echo "## 🔄 What's Changed"
             echo ""
-            echo "## 🔗 Quick Links"
-            echo "- [📦 Tagged source](${TAGGED_TREE_URL})"
-            echo "- [🏷️ Tag page](https://github.com/${{ github.repository }}/releases/tag/${TAG})"
-            echo ""
-            echo "## 🧩 Adaptive Outcomes"
-            cat "${RUNNER_TEMP}/adaptive-report.md"
+            echo "$PROCESSED"
           } > "${RUNNER_TEMP}/release-body.md"
 
           echo "release_body_path=${RUNNER_TEMP}/release-body.md" >> "$GITHUB_OUTPUT"
@@ -402,8 +416,8 @@ jobs:
           target_commitish: ${{ steps.context.outputs.target_sha }}
           draft: ${{ steps.context.outputs.draft == 'true' }}
           body_path: ${{ steps.notes.outputs.release_body_path }}
-          append_body: true
-          generate_release_notes: true
+          append_body: false
+          generate_release_notes: false
           make_latest: ${{ steps.context.outputs.draft == 'true' && 'false' || 'true' }}
           fail_on_unmatched_files: true
           files: ${{ env.APK_PATH }}
@@ -421,10 +435,29 @@ jobs:
           set -euo pipefail
 
           TAG="${{ steps.version.outputs.tag }}"
+          TAG="${TAG:-(unknown)}"
           TARGET_SHA="${{ steps.context.outputs.target_sha }}"
-          TAGGED_TREE_URL="https://github.com/${{ github.repository }}/tree/${TAG}"
-          TAG_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG}"
+          TARGET_SHA="${TARGET_SHA:-(unknown)}"
+          DRAFT="${{ steps.context.outputs.draft }}"
+          DRAFT="${DRAFT:-(unknown)}"
+          SOURCE="${{ steps.context.outputs.source }}"
+          SOURCE="${SOURCE:-(unknown)}"
+          SIGNING_ENABLED="${{ steps.signing.outputs.enabled }}"
+          SIGNING_ENABLED="${SIGNING_ENABLED:-(unknown)}"
+          APK_PATH_VAL="${{ env.APK_PATH }}"
+          APK_PATH_VAL="${APK_PATH_VAL:-(unavailable)}"
           RELEASE_URL="${{ steps.release.outputs.url }}"
+          RELEASE_URL="${RELEASE_URL:-(unavailable)}"
+          LINT_URL="${{ steps.lint_upload.outputs.artifact-url }}"
+          LINT_URL="${LINT_URL:-(unavailable)}"
+
+          if [ "$TAG" != "(unknown)" ]; then
+            TAGGED_TREE_URL="https://github.com/${{ github.repository }}/tree/${TAG}"
+            TAG_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG}"
+          else
+            TAGGED_TREE_URL=""
+            TAG_URL=""
+          fi
 
           {
             echo "## ✅ Release Workflow Result"
@@ -438,18 +471,29 @@ jobs:
             echo "### 🔑 Key Parameters"
             echo "- **Tag:** \`${TAG}\`"
             echo "- **Target SHA:** \`${TARGET_SHA}\`"
-            echo "- **Draft:** \`${{ steps.context.outputs.draft }}\`"
-            echo "- **Trigger source:** \`${{ steps.context.outputs.source }}\`"
-            echo "- **Signing enabled:** \`${{ steps.signing.outputs.enabled }}\`"
-            echo "- **APK path:** \`${{ env.APK_PATH }}\`"
+            echo "- **Draft:** \`${DRAFT}\`"
+            echo "- **Trigger source:** \`${SOURCE}\`"
+            echo "- **Signing enabled:** \`${SIGNING_ENABLED}\`"
+            echo "- **APK path:** \`${APK_PATH_VAL}\`"
             echo ""
             echo "### 🧩 Adaptive Outcomes"
-            cat "${RUNNER_TEMP}/adaptive-report.md"
+            [ -f "${RUNNER_TEMP}/adaptive-report.md" ] && cat "${RUNNER_TEMP}/adaptive-report.md" || echo "_(no adaptive outcomes recorded)_"
             echo ""
             echo "### 🔗 Links"
-            if [ -n "$RELEASE_URL" ]; then
+            if [ -n "$RELEASE_URL" ] && [ "$RELEASE_URL" != "(unavailable)" ]; then
               echo "- [🎉 Release page](${RELEASE_URL})"
             fi
-            echo "- [🏷️ Tag release page](${TAG_URL})"
-            echo "- [📦 Tagged source tree](${TAGGED_TREE_URL})"
+            if [ -n "$TAG_URL" ]; then
+              echo "- [🏷️ Tag release page](${TAG_URL})"
+            fi
+            if [ -n "$TAGGED_TREE_URL" ]; then
+              echo "- [📦 Tagged source tree](${TAGGED_TREE_URL})"
+            fi
+            echo ""
+            echo "#### 📋 Reports"
+            if [ -n "$LINT_URL" ] && [ "$LINT_URL" != "(unavailable)" ]; then
+              echo "- [📊 Release lint report](${LINT_URL})"
+            else
+              echo "- _(lint report unavailable)_"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
