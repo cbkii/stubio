@@ -68,6 +68,8 @@ class SetupActivity : AppCompatActivity() {
         btnPickTrailerFallback.setOnClickListener { showAppPicker(editTrailerFallback) }
 
         btnSave.setOnClickListener { saveSettings() }
+
+        editStreamPrimary.post { editStreamPrimary.requestFocus() }
     }
 
     // region -- App picker
@@ -96,6 +98,8 @@ class SetupActivity : AppCompatActivity() {
             .setView(dialogView)
             .setNegativeButton(R.string.app_picker_close, null)
             .create()
+
+        appGrid.numColumns = 4
 
         appGrid.setOnItemClickListener { _, _, position, _ ->
             targetField.setText(launchableApps[position].packageName)

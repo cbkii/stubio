@@ -9,9 +9,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingLeft="32dp"
+        android:paddingHorizontal="48dp"
         android:paddingTop="40dp"
-        android:paddingRight="32dp"
         android:paddingBottom="40dp">
 
         <TextView
@@ -19,264 +18,233 @@
             android:layout_height="wrap_content"
             android:text="@string/setup_title"
             android:textColor="@color/purple_accent"
-            android:textSize="30sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.05"
-            android:layout_marginBottom="8dp" />
+            android:textSize="40sp"
+            android:textStyle="bold" />
 
         <TextView
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="28dp"
             android:text="@string/setup_subtitle"
             android:textColor="@color/text_secondary"
-            android:textSize="14sp"
-            android:lineSpacingMultiplier="1.3"
-            android:layout_marginBottom="32dp" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="@color/purple_divider"
-            android:layout_marginBottom="28dp" />
+            android:textSize="20sp" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/section_streams"
             android:textColor="@color/purple_accent"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.08"
-            android:layout_marginBottom="6dp" />
+            android:textSize="28sp"
+            android:textStyle="bold" />
 
         <TextView
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="12dp"
             android:text="@string/info_streams"
             android:textColor="@color/text_hint"
-            android:textSize="13sp"
-            android:layout_marginBottom="16dp" />
+            android:textSize="18sp" />
 
         <TextView
+            android:id="@+id/labelStreamPrimary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:labelFor="@id/editStreamPrimary"
             android:text="@string/label_primary_player"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:layout_marginBottom="6dp" />
+            android:textSize="16sp" />
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="52dp"
-            android:orientation="horizontal"
-            android:layout_marginBottom="16dp">
+            android:layout_height="64dp"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="14dp"
+            android:orientation="horizontal">
 
             <EditText
                 android:id="@+id/editStreamPrimary"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
+                android:layout_marginEnd="12dp"
                 android:background="@drawable/edit_text_bg"
+                android:hint="@string/hint_stream_primary"
+                android:imeOptions="actionNext"
+                android:inputType="textNoSuggestions"
+                android:maxLines="1"
+                android:nextFocusDown="@+id/editStreamFallback"
+                android:paddingHorizontal="16dp"
                 android:textColor="@color/text_primary"
                 android:textColorHint="@color/text_hint"
-                android:hint="@string/hint_stream_primary"
-                android:textSize="15sp"
-                android:paddingLeft="16dp"
-                android:paddingRight="16dp"
-                android:inputType="text"
-                android:maxLines="1"
-                android:singleLine="true"
-                android:imeOptions="actionNext"
-                android:focusable="true"
-                android:nextFocusDown="@+id/editStreamFallback"
-                android:layout_marginRight="12dp" />
+                android:textSize="18sp" />
 
             <ImageButton
                 android:id="@+id/btnPickStreamPrimary"
-                android:layout_width="52dp"
+                android:layout_width="64dp"
                 android:layout_height="match_parent"
                 android:background="@drawable/picker_button_bg"
-                android:src="@android:drawable/ic_menu_search"
                 android:contentDescription="@string/btn_pick_app"
-                android:tint="@color/text_primary"
-                android:focusable="true"
-                android:nextFocusDown="@+id/btnPickStreamFallback" />
+                android:src="@android:drawable/ic_menu_search"
+                android:tint="@color/text_primary" />
         </LinearLayout>
 
         <TextView
+            android:id="@+id/labelStreamFallback"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:labelFor="@id/editStreamFallback"
             android:text="@string/label_fallback_player"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:layout_marginBottom="6dp" />
+            android:textSize="16sp" />
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="52dp"
-            android:orientation="horizontal"
-            android:layout_marginBottom="28dp">
+            android:layout_height="64dp"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="24dp"
+            android:orientation="horizontal">
 
             <EditText
                 android:id="@+id/editStreamFallback"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
+                android:layout_marginEnd="12dp"
                 android:background="@drawable/edit_text_bg"
+                android:hint="@string/hint_stream_fallback"
+                android:imeOptions="actionNext"
+                android:inputType="textNoSuggestions"
+                android:maxLines="1"
+                android:nextFocusDown="@+id/editTrailerPrimary"
+                android:paddingHorizontal="16dp"
                 android:textColor="@color/text_primary"
                 android:textColorHint="@color/text_hint"
-                android:hint="@string/hint_stream_fallback"
-                android:textSize="15sp"
-                android:paddingLeft="16dp"
-                android:paddingRight="16dp"
-                android:inputType="text"
-                android:maxLines="1"
-                android:singleLine="true"
-                android:imeOptions="actionNext"
-                android:focusable="true"
-                android:nextFocusDown="@+id/editTrailerPrimary"
-                android:layout_marginRight="12dp" />
+                android:textSize="18sp" />
 
             <ImageButton
                 android:id="@+id/btnPickStreamFallback"
-                android:layout_width="52dp"
+                android:layout_width="64dp"
                 android:layout_height="match_parent"
                 android:background="@drawable/picker_button_bg"
-                android:src="@android:drawable/ic_menu_search"
                 android:contentDescription="@string/btn_pick_app"
-                android:tint="@color/text_primary"
-                android:focusable="true"
-                android:nextFocusDown="@+id/btnPickTrailerPrimary" />
+                android:src="@android:drawable/ic_menu_search"
+                android:tint="@color/text_primary" />
         </LinearLayout>
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="@color/purple_divider"
-            android:layout_marginBottom="28dp" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/section_trailers"
             android:textColor="@color/purple_accent"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.08"
-            android:layout_marginBottom="6dp" />
+            android:textSize="28sp"
+            android:textStyle="bold" />
 
         <TextView
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="12dp"
             android:text="@string/info_trailers"
             android:textColor="@color/text_hint"
-            android:textSize="13sp"
-            android:layout_marginBottom="16dp" />
+            android:textSize="18sp" />
 
         <TextView
+            android:id="@+id/labelTrailerPrimary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:labelFor="@id/editTrailerPrimary"
             android:text="@string/label_primary_player"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:layout_marginBottom="6dp" />
+            android:textSize="16sp" />
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="52dp"
-            android:orientation="horizontal"
-            android:layout_marginBottom="16dp">
+            android:layout_height="64dp"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="14dp"
+            android:orientation="horizontal">
 
             <EditText
                 android:id="@+id/editTrailerPrimary"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
+                android:layout_marginEnd="12dp"
                 android:background="@drawable/edit_text_bg"
+                android:hint="@string/hint_trailer_primary"
+                android:imeOptions="actionNext"
+                android:inputType="textNoSuggestions"
+                android:maxLines="1"
+                android:nextFocusDown="@+id/editTrailerFallback"
+                android:paddingHorizontal="16dp"
                 android:textColor="@color/text_primary"
                 android:textColorHint="@color/text_hint"
-                android:hint="@string/hint_trailer_primary"
-                android:textSize="15sp"
-                android:paddingLeft="16dp"
-                android:paddingRight="16dp"
-                android:inputType="text"
-                android:maxLines="1"
-                android:singleLine="true"
-                android:imeOptions="actionNext"
-                android:focusable="true"
-                android:nextFocusDown="@+id/editTrailerFallback"
-                android:layout_marginRight="12dp" />
+                android:textSize="18sp" />
 
             <ImageButton
                 android:id="@+id/btnPickTrailerPrimary"
-                android:layout_width="52dp"
+                android:layout_width="64dp"
                 android:layout_height="match_parent"
                 android:background="@drawable/picker_button_bg"
-                android:src="@android:drawable/ic_menu_search"
                 android:contentDescription="@string/btn_pick_app"
-                android:tint="@color/text_primary"
-                android:focusable="true"
-                android:nextFocusDown="@+id/btnPickTrailerFallback" />
+                android:src="@android:drawable/ic_menu_search"
+                android:tint="@color/text_primary" />
         </LinearLayout>
 
         <TextView
+            android:id="@+id/labelTrailerFallback"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:labelFor="@id/editTrailerFallback"
             android:text="@string/label_fallback_player"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:layout_marginBottom="6dp" />
+            android:textSize="16sp" />
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="52dp"
-            android:orientation="horizontal"
-            android:layout_marginBottom="36dp">
+            android:layout_height="64dp"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="24dp"
+            android:orientation="horizontal">
 
             <EditText
                 android:id="@+id/editTrailerFallback"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
+                android:layout_marginEnd="12dp"
                 android:background="@drawable/edit_text_bg"
+                android:hint="@string/hint_trailer_fallback"
+                android:imeOptions="actionDone"
+                android:inputType="textNoSuggestions"
+                android:maxLines="1"
+                android:nextFocusDown="@+id/btnSave"
+                android:paddingHorizontal="16dp"
                 android:textColor="@color/text_primary"
                 android:textColorHint="@color/text_hint"
-                android:hint="@string/hint_trailer_fallback"
-                android:textSize="15sp"
-                android:paddingLeft="16dp"
-                android:paddingRight="16dp"
-                android:inputType="text"
-                android:maxLines="1"
-                android:singleLine="true"
-                android:imeOptions="actionDone"
-                android:focusable="true"
-                android:nextFocusDown="@+id/btnSave"
-                android:layout_marginRight="12dp" />
+                android:textSize="18sp" />
 
             <ImageButton
                 android:id="@+id/btnPickTrailerFallback"
-                android:layout_width="52dp"
+                android:layout_width="64dp"
                 android:layout_height="match_parent"
                 android:background="@drawable/picker_button_bg"
-                android:src="@android:drawable/ic_menu_search"
                 android:contentDescription="@string/btn_pick_app"
-                android:tint="@color/text_primary"
-                android:focusable="true"
-                android:nextFocusDown="@+id/btnSave" />
+                android:src="@android:drawable/ic_menu_search"
+                android:tint="@color/text_primary" />
         </LinearLayout>
 
         <Button
             android:id="@+id/btnSave"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
+            android:layout_height="64dp"
+            android:background="@drawable/btn_save_bg"
             android:text="@string/btn_save"
             android:textColor="@color/text_primary"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.05"
-            android:background="@drawable/btn_save_bg"
-            android:focusable="true"
-            android:stateListAnimator="@null" />
+            android:textSize="20sp"
+            android:textStyle="bold" />
 
     </LinearLayout>
 </ScrollView>

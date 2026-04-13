@@ -244,6 +244,9 @@ jobs:
       - name: Ensure Gradle wrapper is executable
         run: chmod +x ./gradlew
 
+      - name: Validate project before release build
+        run: ./gradlew --no-daemon :app:lintDebug :app:assembleDebug
+
       - name: Build signed release APK
         if: steps.signing.outputs.enabled == 'true'
         env:
