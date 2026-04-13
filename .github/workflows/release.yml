@@ -7,6 +7,11 @@ on:
         description: "Optional release tag/version (examples: v1.2.3 or 1.2.3)"
         required: false
         type: string
+      draft:
+        description: "Create/update the GitHub Release as draft"
+        required: false
+        type: boolean
+        default: false
   issue_comment:
     types: [created]
 
@@ -37,26 +42,35 @@ jobs:
         id: context
         env:
           GH_TOKEN: ${{ github.token }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
+          set -euo pipefail
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "target_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
             echo "requested_tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "draft=${{ github.event.inputs.draft && 'true' || 'false' }}" >> "$GITHUB_OUTPUT"
             echo "source=workflow_dispatch" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          COMMENT_BODY='${{ github.event.comment.body }}'
-          if [[ ! "$COMMENT_BODY" =~ ^/release([[:space:]]+([^[:space:]]+))?[[:space:]]*$ ]]; then
-            echo "Not a /release command; skipping."
+          if [[ ! "$COMMENT_BODY" =~ ^/release([[:space:]]+([^[:space:]]+))?([[:space:]]+--draft)?[[:space:]]*$ ]]; then
+            echo "Not a supported /release command. Use '/release', '/release vX.Y.Z', or append '--draft'." >&2
             exit 1
           fi
 
-          REQUESTED_TAG="${BASH_REMATCH[2]}"
+          REQUESTED_TAG="${BASH_REMATCH[2]:-}"
+          IS_DRAFT="false"
+          if [[ "$COMMENT_BODY" =~ [[:space:]]--draft([[:space:]]*$) ]]; then
+            IS_DRAFT="true"
+          fi
+
           PR_NUMBER='${{ github.event.issue.number }}'
           TARGET_SHA=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}" --jq '.head.sha')
 
           echo "target_sha=${TARGET_SHA}" >> "$GITHUB_OUTPUT"
           echo "requested_tag=${REQUESTED_TAG}" >> "$GITHUB_OUTPUT"
+          echo "draft=${IS_DRAFT}" >> "$GITHUB_OUTPUT"
           echo "source=issue_comment" >> "$GITHUB_OUTPUT"
 
       - name: Checkout with full history and tags
@@ -75,9 +89,14 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install Android build-tools
+        run: sdkmanager --install "build-tools;35.0.0"
+
       - name: Resolve release tag/version
         id: version
         run: |
+          set -euo pipefail
+
           REQUESTED_TAG="${{ steps.context.outputs.requested_tag }}"
           TARGET_SHA="${{ steps.context.outputs.target_sha }}"
 
@@ -116,23 +135,28 @@ jobs:
           echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
           echo "Resolved release tag: ${NEXT_TAG}"
 
-      - name: Create and push release tag
+      - name: Validate tag state
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          set -euo pipefail
 
           TARGET_SHA="${{ steps.context.outputs.target_sha }}"
           TAG="${{ steps.version.outputs.tag }}"
 
-          if git rev-parse "${TAG}" >/dev/null 2>&1; then
-            echo "Tag ${TAG} already exists; skipping creation."
-          else
-            git tag "${TAG}" "${TARGET_SHA}"
-            git push origin "${TAG}"
+          git fetch --force --tags origin
+
+          if git show-ref --verify --quiet "refs/tags/${TAG}"; then
+            TAG_SHA=$(git rev-list -n1 "${TAG}")
+            if [ "$TAG_SHA" != "$TARGET_SHA" ]; then
+              echo "ERROR: Tag ${TAG} already exists on ${TAG_SHA}, but target is ${TARGET_SHA}." >&2
+              exit 1
+            fi
+            echo "Tag ${TAG} already exists on target commit; reusing it."
           fi
 
       - name: Validate signing secrets
         run: |
+          set -euo pipefail
+
           if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
             echo "ERROR: Secret ANDROID_KEYSTORE_BASE64 is not set." >&2
             exit 1
@@ -152,6 +176,8 @@ jobs:
 
       - name: Decode keystore to temporary file
         run: |
+          set -euo pipefail
+
           KEYSTORE_PATH="${RUNNER_TEMP}/release.keystore"
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > "$KEYSTORE_PATH"
           echo "KEYSTORE_PATH=${KEYSTORE_PATH}" >> "$GITHUB_ENV"
@@ -171,6 +197,8 @@ jobs:
 
       - name: Verify APK exists
         run: |
+          set -euo pipefail
+
           APK_PATH="app/build/outputs/apk/release/stubio-${{ steps.version.outputs.version_name }}.apk"
           if [ ! -f "$APK_PATH" ]; then
             echo "ERROR: Expected APK not found at ${APK_PATH}" >&2
@@ -183,6 +211,8 @@ jobs:
 
       - name: Verify APK is signed
         run: |
+          set -euo pipefail
+
           APKSIGNER=""
           if [ -d "$ANDROID_SDK_ROOT/build-tools" ]; then
             LATEST_BT=$(ls -1 "$ANDROID_SDK_ROOT/build-tools" | \
@@ -192,10 +222,29 @@ jobs:
               APKSIGNER="$ANDROID_SDK_ROOT/build-tools/$LATEST_BT/apksigner"
             fi
           fi
+
           if [ -n "$APKSIGNER" ]; then
             "$APKSIGNER" verify --verbose "$APK_PATH"
           else
-            echo "apksigner not found; skipping signature verification"
+            echo "WARNING: apksigner not found; cannot verify signature." >&2
+            exit 1
+          fi
+
+      - name: Create and push release tag
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          TARGET_SHA="${{ steps.context.outputs.target_sha }}"
+          TAG="${{ steps.version.outputs.tag }}"
+
+          if git rev-parse "${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists; skipping creation."
+          else
+            git tag "${TAG}" "${TARGET_SHA}"
+            git push origin "${TAG}"
           fi
 
       - name: Create GitHub Release and attach APK
@@ -203,7 +252,10 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ steps.context.outputs.target_sha }}
+          draft: ${{ steps.context.outputs.draft == 'true' }}
           generate_release_notes: true
+          make_latest: ${{ steps.context.outputs.draft == 'true' && 'false' || 'true' }}
+          fail_on_unmatched_files: true
           files: ${{ env.APK_PATH }}
 
       - name: Upload APK as workflow artifact
