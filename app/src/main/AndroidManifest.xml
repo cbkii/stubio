@@ -15,6 +15,14 @@
          Android 11+ package visibility only affects getLaunchIntentForPackage() checks,
          which we gracefully handle by skipping unavailable packages. -->
     <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+        </intent>
         <package android:name="com.teamsmart.videomanager.tv" />
         <package android:name="org.videolan.vlc" />
         <package android:name="com.google.android.youtube" />
