@@ -19,6 +19,10 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SetupActivity : AppCompatActivity() {
 
@@ -72,22 +76,34 @@ class SetupActivity : AppCompatActivity() {
     }
 
     private fun showAppPicker(targetField: EditText) {
-        val launchableApps = loadLaunchableApps()
-        if (launchableApps.isEmpty()) {
-            Toast.makeText(this, R.string.no_apps_found, Toast.LENGTH_SHORT).show()
-            return
-        }
+        // Disable all picker buttons while loading to prevent double-tap on slow hardware.
+        setPickerButtonsEnabled(false)
 
+        lifecycleScope.launch {
+            // Query installed apps and load icons on an IO thread — icon loading can be
+            // slow on low-RAM TV hardware and would otherwise block the main thread.
+            val apps = withContext(Dispatchers.IO) { loadLaunchableApps() }
+
+            setPickerButtonsEnabled(true)
+
+            if (isFinishing) return@launch
+
+            if (apps.isEmpty()) {
+                Toast.makeText(this@SetupActivity, R.string.no_apps_found, Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+
+            showAppPickerDialog(targetField, apps)
+        }
+    }
+
+    private fun showAppPickerDialog(targetField: EditText, apps: List<LaunchableApp>) {
         val dialogView = layoutInflater.inflate(R.layout.dialog_app_picker, null)
         val appGrid = dialogView.findViewById<GridView>(R.id.gridApps)
-        val emptyText = dialogView.findViewById<TextView>(R.id.textNoApps)
 
-        appGrid.adapter = LaunchableAppsAdapter(layoutInflater, launchableApps)
+        appGrid.adapter = LaunchableAppsAdapter(layoutInflater, apps)
         appGrid.numColumns = GridView.AUTO_FIT
         appGrid.columnWidth = resources.getDimensionPixelSize(R.dimen.app_picker_tile_width)
-
-        emptyText.visibility = View.GONE
-        appGrid.visibility = View.VISIBLE
 
         val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.app_picker_title)
@@ -96,12 +112,19 @@ class SetupActivity : AppCompatActivity() {
             .create()
 
         appGrid.setOnItemClickListener { _, _, position, _ ->
-            targetField.setText(launchableApps[position].packageName)
+            targetField.setText(apps[position].packageName)
             dialog.dismiss()
         }
 
         dialog.show()
         appGrid.post { appGrid.requestFocus() }
+    }
+
+    private fun setPickerButtonsEnabled(enabled: Boolean) {
+        btnPickStreamPrimary.isEnabled = enabled
+        btnPickStreamFallback.isEnabled = enabled
+        btnPickTrailerPrimary.isEnabled = enabled
+        btnPickTrailerFallback.isEnabled = enabled
     }
 
     private fun loadLaunchableApps(): List<LaunchableApp> {
@@ -189,14 +212,27 @@ private class LaunchableAppsAdapter(
     override fun getItemId(position: Int): Long = position.toLong()
 
     override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-        val view = convertView ?: inflater.inflate(R.layout.item_app_tile, parent, false)
+        val view: View
+        val holder: ViewHolder
+        if (convertView == null) {
+            view = inflater.inflate(R.layout.item_app_tile, parent, false)
+            holder = ViewHolder(view)
+            view.tag = holder
+        } else {
+            view = convertView
+            holder = view.tag as ViewHolder
+        }
         val app = getItem(position)
-
-        view.findViewById<ImageView>(R.id.imageAppIcon).setImageDrawable(app.icon)
-        view.findViewById<TextView>(R.id.textAppName).text = app.appName
-        view.findViewById<TextView>(R.id.textPackageName).text = app.packageName
+        holder.icon.setImageDrawable(app.icon)
+        holder.name.text = app.appName
+        holder.pkg.text = app.packageName
         view.contentDescription = "${app.appName}, ${app.packageName}"
-
         return view
+    }
+
+    private class ViewHolder(view: View) {
+        val icon: ImageView = view.findViewById(R.id.imageAppIcon)
+        val name: TextView = view.findViewById(R.id.textAppName)
+        val pkg: TextView = view.findViewById(R.id.textPackageName)
     }
 }

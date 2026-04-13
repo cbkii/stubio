@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- D-pad focused (and optionally also selected) — bright accent border -->
     <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#4A2771" />
+            <stroke android:width="2dp" android:color="#CE93D8" />
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+    <!-- GridView selection highlight when item is selected but not focused -->
+    <item android:state_selected="true">
         <shape android:shape="rectangle">
             <solid android:color="#4A2771" />
             <stroke android:width="2dp" android:color="#CE93D8" />

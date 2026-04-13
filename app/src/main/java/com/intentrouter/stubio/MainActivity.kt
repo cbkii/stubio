@@ -112,7 +112,8 @@ class MainActivity : AppCompatActivity() {
 
         val host = uri.host ?: return false
         val allowedHostPatterns = listOf(
-            "127\\.0\\.0\\.1",
+            // Anchored: must be exactly 127.0.0.1, not 127.0.0.10 etc.
+            "^127\\.0\\.0\\.1$",
             "^(?:localhost|192\\.168\\.[0-9]+\\.[0-9]+|10\\.[0-9]+\\.[0-9]+\\.[0-9]+|172\\.(1[6-9]|2[0-9]|3[0-1])\\.[0-9]+\\.[0-9]+|[a-zA-Z0-9.-]+\\.stremio\\.com|[a-zA-Z0-9.-]+\\.strem\\.io)$"
         )
 
@@ -251,15 +252,26 @@ class MainActivity : AppCompatActivity() {
 
         selectedStreamPackage = listOf(streamPrimary, streamFallback, PLAYER_VLC, PLAYER_MX)
             .filter { it.isNotBlank() }
-            .firstOrNull { packageManager.getLaunchIntentForPackage(it) != null }
+            .firstOrNull { isPackageLaunchable(it) }
             ?: PLAYER_VLC
 
         selectedTrailerPackage = listOf(trailerPrimary, trailerFallback, YT_SMARTTUBE, YT_OFFICIAL)
             .filter { it.isNotBlank() }
-            .firstOrNull { packageManager.getLaunchIntentForPackage(it) != null }
+            .firstOrNull { isPackageLaunchable(it) }
             ?: YT_OFFICIAL
 
         selectedPlayerIsVlc = selectedStreamPackage == PLAYER_VLC
+    }
+
+    /**
+     * Returns true if [packageName] has any launchable entry point — either the standard
+     * LAUNCHER or the TV-specific LEANBACK_LAUNCHER.  Checking only getLaunchIntentForPackage
+     * misses TV-only apps (e.g. VLC for Android TV) that omit CATEGORY_LAUNCHER entirely.
+     */
+    private fun isPackageLaunchable(packageName: String): Boolean {
+        val pm = packageManager
+        return pm.getLaunchIntentForPackage(packageName) != null ||
+            pm.getLeanbackLaunchIntentForPackage(packageName) != null
     }
 
     private fun restoreCachedPlaybackData() {
@@ -287,6 +299,10 @@ class MainActivity : AppCompatActivity() {
         lastKnownPosition = 0L
         lastKnownDuration = 0L
         currentStreamUrl = null
+        // Also reset the broadcast-receiver statics so a stale value from a previous
+        // session is never merged back in on the next restoreCachedPlaybackData() call.
+        StreamResultReceiver.lastKnownPosition = 0L
+        StreamResultReceiver.lastKnownDuration = 0L
 
         getSharedPreferences(SetupActivity.PREFS_NAME, MODE_PRIVATE)
             .edit()

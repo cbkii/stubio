@@ -33,6 +33,7 @@
             android:maxLines="1"
             android:nextFocusDown="@id/editStreamFallback"
             android:nextFocusRight="@id/btnPickStreamPrimary"
+            android:nextFocusUp="@id/btnSave"
             android:paddingHorizontal="16dp"
             android:textColor="@color/text_primary"
             android:textColorHint="@color/text_hint"
@@ -46,6 +47,7 @@
             android:contentDescription="@string/btn_pick_stream_primary"
             android:nextFocusDown="@id/btnPickStreamFallback"
             android:nextFocusLeft="@id/editStreamPrimary"
+            android:nextFocusUp="@id/btnSave"
             android:src="@android:drawable/ic_menu_search"
             app:tint="@color/text_primary" />
     </LinearLayout>

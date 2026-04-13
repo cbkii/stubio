@@ -10,7 +10,7 @@ android {
     defaultConfig {
         applicationId = "com.intentrouter.stubio"
         minSdk = 28
-        targetSdk = 34
+        targetSdk = 35
 
         val ciVersionName = (project.findProperty("VERSION_NAME") as String?)?.takeIf { it.isNotBlank() }
             ?: System.getenv("VERSION_NAME")?.takeIf { it.isNotBlank() }
