@@ -1,4 +1,7 @@
 # stubio
-Route Stremio Trailers and Streams to their appropriate 'External Player'
+![Stubio App Icon](https://github.com/cbkii/stubio/blob/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp)
 
-> **Local builds** work without any secrets. Debug APKs are signed with the default debug key as usual. Release builds locally will be unsigned unless you supply the Gradle properties or environment variables manually.
+Small simple Stremio helper app. Routes Stremio Trailers and Streams to their appropriate separate **'External Player'**.
+
+(i.e. Trailers to preferred YouTube app, Movies and episodes to preferred Video Player)
+
