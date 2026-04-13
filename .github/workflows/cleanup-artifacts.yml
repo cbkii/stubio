@@ -1,0 +1,129 @@
+name: Cleanup Lint Artifacts
+
+on:
+  release:
+    types: [published]
+  pull_request:
+    types: [closed]
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+
+    steps:
+      - name: Delete expired lint artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          REPO="${{ github.repository }}"
+
+          # Convert a semver tag (e.g. v1.2.3) to an integer for numeric comparison.
+          # Encodes as major*1000000 + minor*1000 + patch, so a diff of 2 = 0.0.2.
+          semver_num() {
+            local tag="${1#v}"
+            local major=0 minor=0 patch=0
+            IFS='.' read -r major minor patch <<< "${tag}" 2>/dev/null || true
+            echo $(( (${major:-0} * 1000000) + (${minor:-0} * 1000) + ${patch:-0} ))
+          }
+
+          # ── Fetch published releases (non-draft, non-prerelease), sorted newest-first ──
+          RELEASES_JSON=$(gh api "repos/${REPO}/releases?per_page=100" \
+            --jq '[.[] | select(.draft==false and .prerelease==false) | {tag:.tag_name, at:.published_at}] | sort_by(.at) | reverse')
+          NEWEST_TAG=$(echo "$RELEASES_JSON" | jq -r '.[0].tag // ""')
+          NEWEST_NUM=0
+          if [ -n "$NEWEST_TAG" ]; then
+            NEWEST_NUM=$(semver_num "$NEWEST_TAG")
+          fi
+          echo "Published releases: $(echo "$RELEASES_JSON" | jq length), newest: ${NEWEST_TAG:-none}"
+
+          # ── Fetch all non-expired artifacts (first 100) ───────────────────────────────
+          ARTIFACTS_JSON=$(gh api "repos/${REPO}/actions/artifacts?per_page=100" \
+            --jq '[.artifacts[] | select(.expired==false)]')
+
+          # Fetch merged PR timestamps once to avoid repeated API calls in the loop
+          MERGED_PR_DATES=$(gh api "repos/${REPO}/pulls?state=closed&sort=updated&direction=desc&per_page=100" \
+            --jq '[.[] | select(.merged_at != null) | .merged_at]' 2>/dev/null || echo "[]")
+
+          echo "$ARTIFACTS_JSON" | jq -c '.[]' | while IFS= read -r art; do
+            ART_ID=$(echo "$art"    | jq -r '.id')
+            ART_NAME=$(echo "$art"  | jq -r '.name')
+            ART_CREATED=$(echo "$art" | jq -r '.created_at')
+            DELETE=false
+            REASON=""
+
+            # ── Release lint artifacts (lint-report-release-<tag>) ────────────────────
+            if [[ "$ART_NAME" == lint-report-release-* ]]; then
+              ART_TAG="${ART_NAME#lint-report-release-}"
+              ART_NUM=$(semver_num "$ART_TAG")
+
+              # Condition: ≥2 published releases created after this artifact
+              NEWER=$(echo "$RELEASES_JSON" | jq --arg at "$ART_CREATED" \
+                '[.[] | select(.at > $at)] | length')
+              if [ "$NEWER" -ge 2 ]; then
+                DELETE=true
+                REASON="${NEWER} newer releases published after artifact creation"
+              fi
+
+              # Condition: newest release version is ≥ artifact version + 0.0.2
+              if [ "$DELETE" = "false" ] && [ "$NEWEST_NUM" -gt 0 ] && [ "$ART_NUM" -gt 0 ]; then
+                DIFF=$(( NEWEST_NUM - ART_NUM ))
+                if [ "$DIFF" -ge 2 ]; then
+                  DELETE=true
+                  REASON="version bump diff=${DIFF} (>= 0.0.2) from ${ART_TAG} to ${NEWEST_TAG}"
+                fi
+              fi
+            fi
+
+            # ── CI lint artifacts (lint-report-ci-*) ─────────────────────────────────
+            if [[ "$ART_NAME" == lint-report-ci-* ]]; then
+              # Condition: ≥2 published releases created after this artifact
+              NEWER=$(echo "$RELEASES_JSON" | jq --arg at "$ART_CREATED" \
+                '[.[] | select(.at > $at)] | length')
+              if [ "$NEWER" -ge 2 ]; then
+                DELETE=true
+                REASON="${NEWER} newer releases published after artifact creation"
+              fi
+
+              # Condition: version bump ≥ 0.0.2 since artifact creation
+              # Compare the release that was current when the artifact was created
+              # against the newest release.
+              if [ "$DELETE" = "false" ] && [ "$NEWEST_NUM" -gt 0 ]; then
+                RELEASE_AT_CREATION=$(echo "$RELEASES_JSON" | jq -r --arg at "$ART_CREATED" \
+                  '[.[] | select(.at <= $at)] | sort_by(.at) | reverse | .[0].tag // ""')
+                if [ -n "$RELEASE_AT_CREATION" ]; then
+                  CREATION_NUM=$(semver_num "$RELEASE_AT_CREATION")
+                  DIFF=$(( NEWEST_NUM - CREATION_NUM ))
+                  if [ "$DIFF" -ge 2 ]; then
+                    DELETE=true
+                    REASON="version bump diff=${DIFF} (>= 0.0.2) from ${RELEASE_AT_CREATION} to ${NEWEST_TAG}"
+                  fi
+                fi
+              fi
+
+              # Condition: ≥3 PRs merged after artifact creation
+              if [ "$DELETE" = "false" ]; then
+                MERGED_PRS=$(echo "$MERGED_PR_DATES" | jq --arg at "$ART_CREATED" \
+                  '[.[] | select(. > $at)] | length')
+                if [ "$MERGED_PRS" -ge 3 ]; then
+                  DELETE=true
+                  REASON="${MERGED_PRS} PRs merged after artifact creation"
+                fi
+              fi
+            fi
+
+            if [ "$DELETE" = "true" ]; then
+              echo "Deleting artifact ${ART_ID} (${ART_NAME}): ${REASON}"
+              gh api -X DELETE "repos/${REPO}/actions/artifacts/${ART_ID}" \
+                && echo "  → deleted" \
+                || echo "  → Warning: failed to delete ${ART_ID}"
+            fi
+          done
+
+          echo "Artifact cleanup complete."

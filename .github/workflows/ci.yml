@@ -34,25 +34,61 @@ jobs:
 
       - name: Upload debug lint reports
         if: always()
+        id: lint_upload_debug
         uses: actions/upload-artifact@v4
         with:
-          name: lint-reports-debug
+          name: lint-report-ci-debug-${{ github.run_id }}
           path: |
             app/build/reports/lint-results-debug.html
             app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 60
 
       - name: Validate release build
         run: ./gradlew :app:lintRelease :app:assembleRelease --no-daemon
 
       - name: Upload release lint reports
         if: always()
+        id: lint_upload_release
         uses: actions/upload-artifact@v4
         with:
-          name: lint-reports-release
+          name: lint-report-ci-release-${{ github.run_id }}
           path: |
             app/build/reports/lint-results-release.html
             app/build/intermediates/lint_intermediate_text_report/release/lintReportRelease/lint-results-release.txt
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 60
+
+      - name: Publish run summary
+        if: always()
+        run: |
+          set -euo pipefail
+
+          DEBUG_LINT_URL="${{ steps.lint_upload_debug.outputs.artifact-url }}"
+          DEBUG_LINT_URL="${DEBUG_LINT_URL:-(unavailable)}"
+          RELEASE_LINT_URL="${{ steps.lint_upload_release.outputs.artifact-url }}"
+          RELEASE_LINT_URL="${RELEASE_LINT_URL:-(unavailable)}"
+
+          {
+            echo "## 🔨 CI Workflow Result"
+            echo ""
+            if [ "${{ job.status }}" = "success" ]; then
+              echo "**Status:** ✅ Success"
+            else
+              echo "**Status:** ❌ Failed"
+            fi
+            echo ""
+            echo "### 🔗 Links"
+            echo ""
+            echo "#### 📋 Reports"
+            if [ -n "$DEBUG_LINT_URL" ] && [ "$DEBUG_LINT_URL" != "(unavailable)" ]; then
+              echo "- [📊 Debug lint report](${DEBUG_LINT_URL})"
+            else
+              echo "- _(debug lint report unavailable)_"
+            fi
+            if [ -n "$RELEASE_LINT_URL" ] && [ "$RELEASE_LINT_URL" != "(unavailable)" ]; then
+              echo "- [📊 Release lint report](${RELEASE_LINT_URL})"
+            else
+              echo "- _(release lint report unavailable)_"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
