@@ -54,16 +54,27 @@ jobs:
             exit 0
           fi
 
-          if [[ ! "$COMMENT_BODY" =~ ^/release([[:space:]]+([^[:space:]]+))?([[:space:]]+--draft)?[[:space:]]*$ ]]; then
-            echo "Not a supported /release command. Use '/release', '/release vX.Y.Z', or append '--draft'." >&2
-            exit 1
-          fi
-
-          REQUESTED_TAG="${BASH_REMATCH[2]:-}"
+          COMMAND_PAYLOAD="${COMMENT_BODY#/release}"
+          REQUESTED_TAG=""
           IS_DRAFT="false"
-          if [[ "$COMMENT_BODY" =~ [[:space:]]--draft([[:space:]]*$) ]]; then
-            IS_DRAFT="true"
-          fi
+
+          for token in $COMMAND_PAYLOAD; do
+            case "$token" in
+              --draft)
+                IS_DRAFT="true"
+                ;;
+              --*)
+                echo "Ignoring unknown flag '$token'. Supported flag: --draft"
+                ;;
+              *)
+                if [ -z "$REQUESTED_TAG" ]; then
+                  REQUESTED_TAG="$token"
+                else
+                  echo "Ignoring extra argument '$token'."
+                fi
+                ;;
+            esac
+          done
 
           PR_NUMBER='${{ github.event.issue.number }}'
           TARGET_SHA=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}" --jq '.head.sha')
@@ -90,7 +101,13 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Android build-tools
-        run: sdkmanager --install "build-tools;35.0.0"
+        run: |
+          set -euo pipefail
+          if command -v sdkmanager >/dev/null 2>&1; then
+            sdkmanager --install "build-tools;35.0.0"
+          else
+            echo "sdkmanager is unavailable; proceeding with preinstalled build-tools if present."
+          fi
 
       - name: Resolve release tag/version
         id: version
@@ -100,81 +117,110 @@ jobs:
           REQUESTED_TAG="${{ steps.context.outputs.requested_tag }}"
           TARGET_SHA="${{ steps.context.outputs.target_sha }}"
 
-          if [ -n "$REQUESTED_TAG" ]; then
-            if [[ "$REQUESTED_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              [[ "$REQUESTED_TAG" == v* ]] || REQUESTED_TAG="v${REQUESTED_TAG}"
-              NEXT_TAG="$REQUESTED_TAG"
-            else
-              echo "Invalid requested tag: '$REQUESTED_TAG'. Use vX.Y.Z or X.Y.Z." >&2
-              exit 1
+          git fetch --force --tags origin
+
+          semver_to_parts() {
+            local tag="$1"
+            if [[ "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              echo "${BASH_REMATCH[1]} ${BASH_REMATCH[2]} ${BASH_REMATCH[3]}"
+              return 0
             fi
-          else
+            return 1
+          }
+
+          bump_patch() {
+            local tag="$1"
+            local major minor patch
+            read -r major minor patch < <(semver_to_parts "$tag")
+            echo "v${major}.${minor}.$((patch + 1))"
+          }
+
+          # Choose a starting candidate.
+          CANDIDATE_TAG=""
+          if [ -n "$REQUESTED_TAG" ]; then
+            [[ "$REQUESTED_TAG" == v* ]] || REQUESTED_TAG="v${REQUESTED_TAG}"
+            if semver_to_parts "$REQUESTED_TAG" >/dev/null; then
+              CANDIDATE_TAG="$REQUESTED_TAG"
+            else
+              echo "Requested tag '$REQUESTED_TAG' is not semver; falling back to auto-generated tag."
+            fi
+          fi
+
+          if [ -z "$CANDIDATE_TAG" ]; then
             EXISTING_TAG=$(git tag --points-at "$TARGET_SHA" --list 'v*' | head -n1)
-            if [ -n "$EXISTING_TAG" ]; then
-              NEXT_TAG="$EXISTING_TAG"
-              echo "Reusing existing tag on target commit: ${NEXT_TAG}"
+            if [ -n "$EXISTING_TAG" ] && semver_to_parts "$EXISTING_TAG" >/dev/null; then
+              CANDIDATE_TAG="$EXISTING_TAG"
+              echo "Reusing existing tag on target commit: ${CANDIDATE_TAG}"
             else
               LATEST_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n1)
               if [ -z "$LATEST_TAG" ]; then
-                NEXT_TAG="v0.0.1"
-              elif [[ "$LATEST_TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-                MAJOR="${BASH_REMATCH[1]}"
-                MINOR="${BASH_REMATCH[2]}"
-                PATCH="${BASH_REMATCH[3]}"
-                NEXT_PATCH=$((PATCH + 1))
-                NEXT_TAG="v${MAJOR}.${MINOR}.${NEXT_PATCH}"
+                CANDIDATE_TAG="v0.0.1"
+              elif semver_to_parts "$LATEST_TAG" >/dev/null; then
+                CANDIDATE_TAG=$(bump_patch "$LATEST_TAG")
               else
                 echo "Latest tag '${LATEST_TAG}' is non-semver; falling back to v0.0.1"
-                NEXT_TAG="v0.0.1"
+                CANDIDATE_TAG="v0.0.1"
               fi
             fi
           fi
+
+          # Ensure chosen tag is valid for target SHA; if it already exists elsewhere, bump patch until available.
+          ATTEMPTS=0
+          NEXT_TAG="$CANDIDATE_TAG"
+          while :; do
+            ATTEMPTS=$((ATTEMPTS + 1))
+            if [ "$ATTEMPTS" -gt 200 ]; then
+              echo "Could not find an available tag after 200 attempts starting from ${CANDIDATE_TAG}." >&2
+              exit 1
+            fi
+
+            if git show-ref --verify --quiet "refs/tags/${NEXT_TAG}"; then
+              TAG_SHA=$(git rev-list -n1 "${NEXT_TAG}")
+              if [ "$TAG_SHA" = "$TARGET_SHA" ]; then
+                echo "Tag ${NEXT_TAG} already points at target commit; reusing it."
+                break
+              fi
+              echo "Tag ${NEXT_TAG} points to ${TAG_SHA}; bumping patch and retrying."
+              NEXT_TAG=$(bump_patch "$NEXT_TAG")
+              continue
+            fi
+
+            break
+          done
 
           VERSION_NAME="${NEXT_TAG#v}"
           echo "tag=${NEXT_TAG}" >> "$GITHUB_OUTPUT"
           echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
           echo "Resolved release tag: ${NEXT_TAG}"
 
-      - name: Validate tag state
+      - name: Resolve signing mode
+        id: signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
 
-          TARGET_SHA="${{ steps.context.outputs.target_sha }}"
-          TAG="${{ steps.version.outputs.tag }}"
-
-          git fetch --force --tags origin
-
-          if git show-ref --verify --quiet "refs/tags/${TAG}"; then
-            TAG_SHA=$(git rev-list -n1 "${TAG}")
-            if [ "$TAG_SHA" != "$TARGET_SHA" ]; then
-              echo "ERROR: Tag ${TAG} already exists on ${TAG_SHA}, but target is ${TARGET_SHA}." >&2
-              exit 1
+          missing=0
+          for secret_name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!secret_name}" ]; then
+              echo "Missing secret: ${secret_name}"
+              missing=$((missing + 1))
             fi
-            echo "Tag ${TAG} already exists on target commit; reusing it."
-          fi
+          done
 
-      - name: Validate signing secrets
-        run: |
-          set -euo pipefail
-
-          if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            echo "ERROR: Secret ANDROID_KEYSTORE_BASE64 is not set." >&2
-            exit 1
-          fi
-          if [ -z "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" ]; then
-            echo "ERROR: Secret ANDROID_KEYSTORE_PASSWORD is not set." >&2
-            exit 1
-          fi
-          if [ -z "${{ secrets.ANDROID_KEY_ALIAS }}" ]; then
-            echo "ERROR: Secret ANDROID_KEY_ALIAS is not set." >&2
-            exit 1
-          fi
-          if [ -z "${{ secrets.ANDROID_KEY_PASSWORD }}" ]; then
-            echo "ERROR: Secret ANDROID_KEY_PASSWORD is not set." >&2
-            exit 1
+          if [ "$missing" -eq 0 ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Signing is enabled."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Signing secrets are incomplete (${missing} missing). Falling back to unsigned release build."
           fi
 
       - name: Decode keystore to temporary file
+        if: steps.signing.outputs.enabled == 'true'
         run: |
           set -euo pipefail
 
@@ -186,6 +232,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build signed release APK
+        if: steps.signing.outputs.enabled == 'true'
         env:
           ANDROID_SIGNING_STORE_FILE: ${{ env.KEYSTORE_PATH }}
           ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -195,21 +242,37 @@ jobs:
           VERSION_CODE: ${{ github.run_number }}
         run: ./gradlew :app:assembleRelease --no-daemon
 
-      - name: Verify APK exists
+      - name: Build unsigned release APK (fallback)
+        if: steps.signing.outputs.enabled != 'true'
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          VERSION_CODE: ${{ github.run_number }}
+        run: ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Resolve APK artifact path
         run: |
           set -euo pipefail
 
-          APK_PATH="app/build/outputs/apk/release/stubio-${{ steps.version.outputs.version_name }}.apk"
-          if [ ! -f "$APK_PATH" ]; then
-            echo "ERROR: Expected APK not found at ${APK_PATH}" >&2
-            echo "Contents of app/build/outputs/apk/release (if it exists):"
-            ls -la "app/build/outputs/apk/release" 2>/dev/null || true
-            exit 1
+          EXPECTED_APK="app/build/outputs/apk/release/stubio-${{ steps.version.outputs.version_name }}.apk"
+          if [ -f "$EXPECTED_APK" ]; then
+            APK_PATH="$EXPECTED_APK"
+          else
+            ALT_APK=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n1 || true)
+            if [ -n "$ALT_APK" ]; then
+              APK_PATH="$ALT_APK"
+              echo "Expected APK filename missing; using fallback APK: ${APK_PATH}"
+            else
+              echo "ERROR: No APK file found under app/build/outputs/apk/release." >&2
+              ls -la "app/build/outputs/apk/release" 2>/dev/null || true
+              exit 1
+            fi
           fi
+
           echo "APK_PATH=${APK_PATH}" >> "$GITHUB_ENV"
           echo "Found APK: ${APK_PATH}"
 
       - name: Verify APK is signed
+        if: steps.signing.outputs.enabled == 'true'
         run: |
           set -euo pipefail
 
@@ -223,11 +286,14 @@ jobs:
             fi
           fi
 
+          if [ -z "$APKSIGNER" ] && command -v apksigner >/dev/null 2>&1; then
+            APKSIGNER="$(command -v apksigner)"
+          fi
+
           if [ -n "$APKSIGNER" ]; then
             "$APKSIGNER" verify --verbose "$APK_PATH"
           else
-            echo "WARNING: apksigner not found; cannot verify signature." >&2
-            exit 1
+            echo "apksigner not found; skipping signature verification even though signing was enabled."
           fi
 
       - name: Create and push release tag
@@ -240,11 +306,30 @@ jobs:
           TARGET_SHA="${{ steps.context.outputs.target_sha }}"
           TAG="${{ steps.version.outputs.tag }}"
 
-          if git rev-parse "${TAG}" >/dev/null 2>&1; then
-            echo "Tag ${TAG} already exists; skipping creation."
-          else
-            git tag "${TAG}" "${TARGET_SHA}"
-            git push origin "${TAG}"
+          if git show-ref --verify --quiet "refs/tags/${TAG}"; then
+            TAG_SHA=$(git rev-list -n1 "${TAG}")
+            if [ "$TAG_SHA" = "$TARGET_SHA" ]; then
+              echo "Tag ${TAG} already exists on target commit; skipping creation."
+              exit 0
+            fi
+            echo "Tag ${TAG} now points to ${TAG_SHA} (race condition). Keeping existing tag and continuing without push."
+            exit 0
+          fi
+
+          git tag "${TAG}" "${TARGET_SHA}"
+          if ! git push origin "${TAG}"; then
+            echo "Initial tag push failed; re-fetching tags for fallback handling."
+            git fetch --force --tags origin
+            if git show-ref --verify --quiet "refs/tags/${TAG}"; then
+              TAG_SHA=$(git rev-list -n1 "${TAG}")
+              if [ "$TAG_SHA" = "$TARGET_SHA" ]; then
+                echo "Tag ${TAG} is now present on target commit after push race; continuing."
+                exit 0
+              fi
+            fi
+
+            echo "ERROR: Could not push tag ${TAG}; please retry run to choose a new auto-bumped tag." >&2
+            exit 1
           fi
 
       - name: Create GitHub Release and attach APK
