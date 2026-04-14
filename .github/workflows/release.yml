@@ -353,16 +353,27 @@ jobs:
           fi
           echo "- ℹ️ Tag strategy: ${{ steps.version.outputs.tag_note }}" >> "${RUNNER_TEMP}/adaptive-report.md"
 
+          # Find the most recent active published (non-draft, non-prerelease) release tag
+          # so the changelog compares against the correct base rather than any tag.
+          PREV_TAG=$(gh api "repos/${{ github.repository }}/releases" \
+            --jq '[.[] | select(.draft == false and .prerelease == false)] | .[0].tag_name // empty' \
+            2>/dev/null || true)
+
           GENERATED_NOTES=""
           if [ "$TAG" != "(unknown)" ] && [ "$TARGET_SHA" != "(unknown)" ]; then
+            GENERATE_ARGS=(-f "tag_name=${TAG}" -f "target_commitish=${TARGET_SHA}")
+            [ -n "$PREV_TAG" ] && GENERATE_ARGS+=(-f "previous_tag_name=${PREV_TAG}")
             GENERATED_NOTES=$(gh api "repos/${{ github.repository }}/releases/generate-notes" \
-              -f "tag_name=${TAG}" \
-              -f "target_commitish=${TARGET_SHA}" \
+              "${GENERATE_ARGS[@]}" \
               --jq '.body' 2>/dev/null || true)
           fi
 
-          # Strip the original "## What's Changed" heading and prepend with emoji version
-          PROCESSED=$(echo "$GENERATED_NOTES" | sed "/^## What's Changed/d" || true)
+          # Strip the "## What's Changed" heading (replaced below with emoji variant).
+          # Reformat PR/commit bullet lines from GitHub's default:
+          #   "* title by @user in URL"  →  "[»](URL) title by @user"
+          PROCESSED=$(echo "$GENERATED_NOTES" | \
+            sed "/^## What's Changed/d" | \
+            sed -E 's|^\* (.+) in (https://[^ ]+)$|[»](\2) \1|' || true)
 
           {
             echo "## 🔄 What's Changed"
@@ -418,7 +429,7 @@ jobs:
           body_path: ${{ steps.notes.outputs.release_body_path }}
           append_body: false
           generate_release_notes: false
-          make_latest: ${{ steps.context.outputs.draft == 'true' && 'false' || 'true' }}
+          make_latest: ${{ steps.context.outputs.draft != 'true' && 'true' || 'false' }}
           fail_on_unmatched_files: true
           files: ${{ env.APK_PATH }}
 
@@ -431,6 +442,9 @@ jobs:
 
       - name: Publish run summary
         if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO_BASE_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -446,17 +460,49 @@ jobs:
           SIGNING_ENABLED="${SIGNING_ENABLED:-(unknown)}"
           APK_PATH_VAL="${{ env.APK_PATH }}"
           APK_PATH_VAL="${APK_PATH_VAL:-(unavailable)}"
-          RELEASE_URL="${{ steps.release.outputs.url }}"
+
+          # Percent-encode the first character of the repository-name path segment.
+          # This prevents GitHub's built-in secret masker from redacting the repo name
+          # when it coincidentally matches a registered secret value.
+          # Browsers decode percent-encoded characters before resolving, so links work.
+          _safe_repo_url() {
+            local url="$1"
+            local repo_name="${GITHUB_REPOSITORY#*/}"
+            if [ -z "$repo_name" ] || [ -z "$url" ]; then
+              printf '%s' "$url"
+              return
+            fi
+            local char_code encoded_first
+            # LC_ALL=C ensures consistent byte-value interpretation across locales.
+            # GitHub repo names are restricted to [a-zA-Z0-9._-] so a literal '
+            # in the repo name is not possible and the printf 'char trick is safe.
+            char_code=$(LC_ALL=C printf '%d' "'${repo_name:0:1}")
+            encoded_first=$(printf '%%%02X' "$char_code")
+            # Replace only the first occurrence (the /owner/repo/ path segment).
+            printf '%s' "${url/$repo_name/${encoded_first}${repo_name:1}}"
+          }
+
+          # Prefer the URL returned by the release API (handles draft placeholder URLs).
+          RELEASE_URL=""
+          if [ "$TAG" != "(unknown)" ]; then
+            RELEASE_URL=$(gh release view "${TAG}" --json url --jq '.url' 2>/dev/null || true)
+          fi
+          # Fall back to the action output if gh CLI lookup failed or returned untagged URL.
+          if [ -z "$RELEASE_URL" ] || echo "$RELEASE_URL" | grep -q 'untagged-'; then
+            RELEASE_URL="${{ steps.release.outputs.url }}"
+          fi
           RELEASE_URL="${RELEASE_URL:-(unavailable)}"
+          [ "$RELEASE_URL" != "(unavailable)" ] && RELEASE_URL=$(_safe_repo_url "$RELEASE_URL")
+
           LINT_URL="${{ steps.lint_upload.outputs.artifact-url }}"
           LINT_URL="${LINT_URL:-(unavailable)}"
+          [ "$LINT_URL" != "(unavailable)" ] && LINT_URL=$(_safe_repo_url "$LINT_URL")
 
+          TAG_URL=""
+          TAGGED_TREE_URL=""
           if [ "$TAG" != "(unknown)" ]; then
-            TAGGED_TREE_URL="https://github.com/${{ github.repository }}/tree/${TAG}"
-            TAG_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG}"
-          else
-            TAGGED_TREE_URL=""
-            TAG_URL=""
+            TAG_URL=$(_safe_repo_url "${REPO_BASE_URL}/releases/tag/${TAG}")
+            TAGGED_TREE_URL=$(_safe_repo_url "${REPO_BASE_URL}/tree/${TAG}")
           fi
 
           {
