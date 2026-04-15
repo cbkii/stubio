@@ -89,9 +89,7 @@ android {
 
 dependencies {
     implementation(libs.androidx.appcompat)
-    implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.androidx.preference.ktx)
 
     testImplementation(libs.junit)
 }

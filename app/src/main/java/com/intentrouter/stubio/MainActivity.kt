@@ -6,12 +6,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -228,11 +226,9 @@ class MainActivity : AppCompatActivity() {
             else addAction("$selectedStreamPackage.mxplayer.result")
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(streamReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            ContextCompat.registerReceiver(this, streamReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
-        }
+        // RECEIVER_NOT_EXPORTED is inlined as a compile-time constant (value 0x4);
+        // the 3-argument form of registerReceiver requires API 26+, safe with minSdk=28.
+        registerReceiver(streamReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         streamReceiverRegistered = true
     }
 

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Foreground layer for the adaptive launcher icon (ic_launcher).
+    Converted from the app SVG (787×787 viewBox).
+
+    Layout:
+      • Two triangles form a diamond: upper (#9D56BC purple), lower (#3D4793 indigo)
+      • Red circle (#C82E48) in the upper half — acts as a play-head indicator
+      • White play-triangle pointing right — the media-routing arrow
+      • Orange circle (#FF9100) in the lower half — destination/output indicator, same size as red circle (r=55)
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="787"
+    android:viewportHeight="787">
+
+    <!-- Upper triangle (purple) -->
+    <path
+        android:fillColor="#9D56BC"
+        android:pathData="M390,27 L20,394 L760,394 Z" />
+
+    <!-- Lower triangle (indigo) -->
+    <path
+        android:fillColor="#3D4793"
+        android:pathData="M20,394 L390,764 L760,394 Z" />
+
+    <!-- Red circle  cx=390.5  cy=194.5  r=55 -->
+    <path
+        android:fillColor="#C82E48"
+        android:pathData="M335.5,194.5 A55,55 0 1,0 445.5,194.5 A55,55 0 1,0 335.5,194.5 Z" />
+
+    <!-- White play triangle  (313,255) → (534,396) → (313,542) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M313,255 L534,396 L313,542 Z" />
+
+    <!-- Orange circle  cx=389.5  cy=598  r=55 (same size as red circle) -->
+    <path
+        android:fillColor="#FF9100"
+        android:pathData="M334.5,598 A55,55 0 1,0 444.5,598 A55,55 0 1,0 334.5,598 Z" />
+
+</vector>
+

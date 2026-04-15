@@ -2,16 +2,12 @@
 agp = "8.8.0"
 kotlin = "2.0.0"
 appcompat = "1.7.1"
-coreKtx = "1.15.0"
 coroutines = "1.9.0"
-preferenceKtx = "1.2.1"
 junit = "4.13.2"
 
 [libraries]
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
-androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
-androidx-preference-ktx = { group = "androidx.preference", name = "preference-ktx", version.ref = "preferenceKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 [plugins]
