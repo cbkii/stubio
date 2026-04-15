@@ -1,6 +1,6 @@
 # RELEASE_READINESS_REPORT
 
-_Last updated: 2026-04-13_
+_Last updated: 2026-04-15_
 
 ## Summary of fixes
 
@@ -43,6 +43,7 @@ _Last updated: 2026-04-13_
 
 - **Runtime intent/playback behaviour** could only be statically validated here — no connected Android TV emulator/device was available in this environment.
 - **TV banner** is a generated drawable gradient. A final 320×180 branded PNG/WebP may be preferable before store submission (Play Store requires a 320×180 TV banner for TV apps).
+- **Round launcher parity** — imported launcher pack did not include dedicated `ic_launcher_round` raster assets. Existing round mipmaps remain in place for compatibility, while API 26+ round icons resolve through `mipmap-anydpi-v26/ic_launcher_round.xml`.
 - **`PACKAGE_PATTERN` allows `org.videolan.vlc.debug`-style suffixes** — the regex validates structure but cannot verify the package is actually installed or is a legitimate player. This is by design (validation is structural, installation check happens at launch time).
 - **No instrumentation/UI tests** — adding Espresso or UI Automator tests is beyond the scope of a static-analysis pass without a connected device.
 
