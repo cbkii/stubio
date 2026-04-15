@@ -11,7 +11,6 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -231,7 +230,7 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(streamReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
-            ContextCompat.registerReceiver(this, streamReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+            registerReceiver(streamReceiver, filter)
         }
         streamReceiverRegistered = true
     }

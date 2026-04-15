@@ -195,15 +195,6 @@ class SetupActivity : AppCompatActivity() {
     }
 }
 
-private fun queryActivities(pm: PackageManager, intent: Intent): List<android.content.pm.ResolveInfo> {
-    return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-        pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong()))
-    } else {
-        @Suppress("DEPRECATION")
-        pm.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
-    }
-}
-
 // Launcher categories (LAUNCHER / LEANBACK_LAUNCHER) don't require CATEGORY_DEFAULT,
 // so use flags=0 to avoid filtering out apps that omit that category.
 private fun queryLauncherActivities(pm: PackageManager, intent: Intent): List<android.content.pm.ResolveInfo> {
