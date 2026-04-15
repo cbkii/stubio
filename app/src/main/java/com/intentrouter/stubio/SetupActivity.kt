@@ -12,9 +12,9 @@ import android.view.ViewGroup
 import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.EditText
-import android.widget.GridView
 import android.widget.ImageButton
 import android.widget.ImageView
+import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -99,11 +99,9 @@ class SetupActivity : AppCompatActivity() {
 
     private fun showAppPickerDialog(targetField: EditText, apps: List<LaunchableApp>) {
         val dialogView = layoutInflater.inflate(R.layout.dialog_app_picker, null)
-        val appGrid = dialogView.findViewById<GridView>(R.id.gridApps)
+        val appList = dialogView.findViewById<ListView>(R.id.listApps)
 
-        appGrid.adapter = LaunchableAppsAdapter(layoutInflater, apps)
-        appGrid.numColumns = GridView.AUTO_FIT
-        appGrid.columnWidth = resources.getDimensionPixelSize(R.dimen.app_picker_tile_width)
+        appList.adapter = LaunchableAppsAdapter(layoutInflater, apps)
 
         val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.app_picker_title)
@@ -111,13 +109,13 @@ class SetupActivity : AppCompatActivity() {
             .setNegativeButton(R.string.app_picker_close, null)
             .create()
 
-        appGrid.setOnItemClickListener { _, _, position, _ ->
+        appList.setOnItemClickListener { _, _, position, _ ->
             targetField.setText(apps[position].packageName)
             dialog.dismiss()
         }
 
         dialog.show()
-        appGrid.post { appGrid.requestFocus() }
+        appList.post { appList.requestFocus() }
     }
 
     private fun setPickerButtonsEnabled(enabled: Boolean) {
@@ -129,11 +127,21 @@ class SetupActivity : AppCompatActivity() {
 
     private fun loadLaunchableApps(): List<LaunchableApp> {
         val pm = packageManager
-        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-        val launcherApps = queryActivities(pm, launcherIntent)
 
-        return launcherApps
-            .distinctBy { it.activityInfo.packageName }
+        // Query both standard LAUNCHER and TV LEANBACK_LAUNCHER so that all installed
+        // apps (phone apps, TV-only apps, and apps supporting both) are included.
+        // Use flags=0 (not MATCH_DEFAULT_ONLY) because launcher activities are not
+        // required to also declare CATEGORY_DEFAULT.
+        val standardIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val leanbackIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+
+        // Use a LinkedHashMap keyed by package name to deduplicate before loading icons,
+        // preserving insertion order (standard apps first).
+        val byPackage = LinkedHashMap<String, android.content.pm.ResolveInfo>()
+        for (ri in queryLauncherActivities(pm, standardIntent)) byPackage[ri.activityInfo.packageName] = ri
+        for (ri in queryLauncherActivities(pm, leanbackIntent)) byPackage.putIfAbsent(ri.activityInfo.packageName, ri)
+
+        return byPackage.values
             .map {
                 LaunchableApp(
                     appName = it.loadLabel(pm)?.toString().orEmpty().ifBlank { it.activityInfo.packageName },
@@ -196,6 +204,17 @@ private fun queryActivities(pm: PackageManager, intent: Intent): List<android.co
     }
 }
 
+// Launcher categories (LAUNCHER / LEANBACK_LAUNCHER) don't require CATEGORY_DEFAULT,
+// so use flags=0 to avoid filtering out apps that omit that category.
+private fun queryLauncherActivities(pm: PackageManager, intent: Intent): List<android.content.pm.ResolveInfo> {
+    return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+        pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0L))
+    } else {
+        @Suppress("DEPRECATION")
+        pm.queryIntentActivities(intent, 0)
+    }
+}
+
 private data class LaunchableApp(
     val appName: String,
     val packageName: String,
@@ -225,7 +244,6 @@ private class LaunchableAppsAdapter(
         val app = getItem(position)
         holder.icon.setImageDrawable(app.icon)
         holder.name.text = app.appName
-        holder.pkg.text = app.packageName
         view.contentDescription = "${app.appName}, ${app.packageName}"
         return view
     }
@@ -233,6 +251,5 @@ private class LaunchableAppsAdapter(
     private class ViewHolder(view: View) {
         val icon: ImageView = view.findViewById(R.id.imageAppIcon)
         val name: TextView = view.findViewById(R.id.textAppName)
-        val pkg: TextView = view.findViewById(R.id.textPackageName)
     }
 }

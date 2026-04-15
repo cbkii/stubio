@@ -16,17 +16,13 @@
         android:textSize="20sp"
         android:visibility="gone" />
 
-    <GridView
-        android:id="@+id/gridApps"
+    <ListView
+        android:id="@+id/listApps"
         android:layout_width="match_parent"
         android:layout_height="460dp"
         android:clipToPadding="false"
-        android:gravity="center"
-        android:horizontalSpacing="14dp"
-        android:listSelector="@android:color/transparent"
-        android:numColumns="auto_fit"
-        android:padding="8dp"
-        android:stretchMode="columnWidth"
-        android:verticalSpacing="14dp" />
+        android:divider="@android:color/transparent"
+        android:dividerHeight="4dp"
+        android:padding="4dp" />
 
 </LinearLayout>
