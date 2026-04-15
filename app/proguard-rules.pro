@@ -26,5 +26,7 @@
 }
 
 # Merge all non-public classes into the root package to reduce DEX overhead.
+# R8 emits a mapping.txt alongside the APK that can be used to de-obfuscate
+# any stack traces captured by a crash reporter.
 -repackageclasses ''
 -allowaccessmodification
