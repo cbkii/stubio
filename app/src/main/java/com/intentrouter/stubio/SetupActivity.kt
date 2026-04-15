@@ -135,10 +135,13 @@ class SetupActivity : AppCompatActivity() {
         val standardIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val leanbackIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
 
-        val combined = queryLauncherActivities(pm, standardIntent) + queryLauncherActivities(pm, leanbackIntent)
+        // Use a LinkedHashMap keyed by package name to deduplicate before loading icons,
+        // preserving insertion order (standard apps first).
+        val byPackage = LinkedHashMap<String, android.content.pm.ResolveInfo>()
+        for (ri in queryLauncherActivities(pm, standardIntent)) byPackage[ri.activityInfo.packageName] = ri
+        for (ri in queryLauncherActivities(pm, leanbackIntent)) byPackage.putIfAbsent(ri.activityInfo.packageName, ri)
 
-        return combined
-            .distinctBy { it.activityInfo.packageName }
+        return byPackage.values
             .map {
                 LaunchableApp(
                     appName = it.loadLabel(pm)?.toString().orEmpty().ifBlank { it.activityInfo.packageName },

@@ -19,11 +19,22 @@
         android:layout_height="64dp"
         android:orientation="horizontal">
 
+        <ImageButton
+            android:id="@+id/btnPickStreamFallback"
+            android:layout_width="80dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="12dp"
+            android:background="@drawable/picker_button_bg"
+            android:contentDescription="@string/btn_pick_stream_fallback"
+            android:nextFocusDown="@id/btnPickTrailerPrimary"
+            android:nextFocusRight="@id/editStreamFallback"
+            android:src="@android:drawable/ic_menu_search"
+            app:tint="@color/text_primary" />
+
         <EditText
             android:id="@+id/editStreamFallback"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_marginEnd="12dp"
             android:layout_weight="1"
             android:autofillHints=""
             android:background="@drawable/edit_text_bg"
@@ -32,21 +43,10 @@
             android:inputType="text"
             android:maxLines="1"
             android:nextFocusDown="@id/editTrailerPrimary"
-            android:nextFocusRight="@id/btnPickStreamFallback"
+            android:nextFocusLeft="@id/btnPickStreamFallback"
             android:paddingHorizontal="16dp"
             android:textColor="@color/text_primary"
             android:textColorHint="@color/text_hint"
             android:textSize="18sp" />
-
-        <ImageButton
-            android:id="@+id/btnPickStreamFallback"
-            android:layout_width="80dp"
-            android:layout_height="match_parent"
-            android:background="@drawable/picker_button_bg"
-            android:contentDescription="@string/btn_pick_stream_fallback"
-            android:nextFocusDown="@id/btnPickTrailerPrimary"
-            android:nextFocusLeft="@id/editStreamFallback"
-            android:src="@android:drawable/ic_menu_search"
-            app:tint="@color/text_primary" />
     </LinearLayout>
 </LinearLayout>
