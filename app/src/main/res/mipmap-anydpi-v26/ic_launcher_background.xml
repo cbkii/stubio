@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Replaces the per-density ic_launcher_background PNGs.
+     Gradient sampled from the original bitmaps: top-left corner (#402571) to
+     bottom-right corner (#2b0d61), matching the app's deep-purple colour scheme.
+     angle=315 → top-left to bottom-right in Android's GradientDrawable convention. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="315"
+        android:startColor="#402571"
+        android:endColor="#2b0d61" />
+</shape>
