@@ -100,6 +100,7 @@ adb shell am start \
 
 ## Known limitations
 
-- TV banner is a generated vector gradient; a 320×180 branded PNG/WebP is recommended before Play Store submission.
+- Launcher icon pack is wired for `android:icon` and adaptive icon layers, but no matching dedicated `ic_launcher_round` raster set was provided in the import. Legacy round mipmaps are kept as a safe pre-API 26 fallback.
+- TV banner is still the existing generated vector drawable (`@drawable/tv_banner`); the imported art set only includes square launcher/store icons, not a 320×180 TV banner source.
 - No Espresso/instrumentation tests — UI testing requires a connected device or emulator.
 - Playback position resume relies on external players returning position via `RESULT_OK`; behaviour varies by player version.
