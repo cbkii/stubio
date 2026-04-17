@@ -33,7 +33,8 @@ class MainActivity : AppCompatActivity() {
         private val ALLOWED_HOST_REGEX = Regex(
             "^(?:localhost|192\\.168\\.[0-9]+\\.[0-9]+|10\\.[0-9]+\\.[0-9]+\\.[0-9]+|172\\.(1[6-9]|2[0-9]|3[0-1])\\.[0-9]+\\.[0-9]+|[a-zA-Z0-9.-]+\\.stremio\\.com|[a-zA-Z0-9.-]+\\.strem\\.io)$"
         )
-        private val IPV4_HOST_REGEX = Regex("^(?:(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)$")
+        private val IPV4_OCTET_REGEX = "(?:0|[1-9]\\d?|1\\d\\d|2[0-4]\\d|25[0-5])"
+        private val IPV4_HOST_REGEX = Regex("^(?:$IPV4_OCTET_REGEX\\.){3}$IPV4_OCTET_REGEX$")
         private val DOMAIN_HOST_REGEX = Regex(
             "^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])$",
             RegexOption.IGNORE_CASE
@@ -105,6 +106,8 @@ class MainActivity : AppCompatActivity() {
     private var lastKnownPosition: Long = 0L
     private var lastKnownDuration: Long = 0L
     private var currentStreamUrl: String? = null
+    private var cachedAdditionalAllowedHostsRaw: String? = null
+    private var cachedAdditionalAllowedHosts: Set<String> = emptySet()
 
     private var streamReceiver: StreamResultReceiver? = null
     private var streamReceiverRegistered = false
@@ -366,6 +369,9 @@ class MainActivity : AppCompatActivity() {
     private fun getAdditionalAllowedHosts(): Set<String> {
         val value = getSharedPreferences(SetupActivity.PREFS_NAME, MODE_PRIVATE)
             .getString(SetupActivity.KEY_ADDITIONAL_ALLOWED_HOSTS, null)
-        return parseAdditionalAllowedHosts(value)
+        if (value == cachedAdditionalAllowedHostsRaw) return cachedAdditionalAllowedHosts
+        cachedAdditionalAllowedHostsRaw = value
+        cachedAdditionalAllowedHosts = parseAdditionalAllowedHosts(value)
+        return cachedAdditionalAllowedHosts
     }
 }

@@ -23,7 +23,7 @@ class HostAllowlistTest {
 
     @Test
     fun parseAdditionalAllowedHosts_discardsInvalidHostTokens() {
-        val parsed = MainActivity.parseAdditionalAllowedHosts("ok.example.com, bad host, x, 999.1.1.1, 256.0.0.1, 10.0.0.1")
+        val parsed = MainActivity.parseAdditionalAllowedHosts("ok.example.com, bad host, x, 999.1.1.1, 256.0.0.1, 010.0.0.1, 10.0.0.1")
 
         assertEquals(setOf("ok.example.com", "10.0.0.1"), parsed)
     }
