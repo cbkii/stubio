@@ -37,11 +37,18 @@ class MainActivity : AppCompatActivity() {
 
         private var cachedStremioServer: String? = null
         internal fun normalizeHost(value: String): String {
-            return value
-                .trim()
-                .lowercase()
-                .removePrefix("[")
-                .removeSuffix("]")
+            val trimmed = value.trim()
+            val unwrapped = if (trimmed.startsWith("[") && trimmed.endsWith("]") && trimmed.length >= 2) {
+                trimmed.substring(1, trimmed.length - 1)
+            } else {
+                trimmed
+            }
+            val zoneIndex = unwrapped.indexOf('%')
+            return if (zoneIndex >= 0) {
+                unwrapped.substring(0, zoneIndex).lowercase() + unwrapped.substring(zoneIndex)
+            } else {
+                unwrapped.lowercase()
+            }
         }
 
         internal fun parseAdditionalAllowedHosts(rawValue: String?): Set<String> {

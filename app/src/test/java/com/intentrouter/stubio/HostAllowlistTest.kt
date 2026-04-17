@@ -15,6 +15,13 @@ class HostAllowlistTest {
     }
 
     @Test
+    fun normalizeHost_keepsIPv6ZoneSuffixAndUnpairedBrackets() {
+        assertEquals("fe80::1%Eth0", MainActivity.normalizeHost("[Fe80::1%Eth0]"))
+        assertEquals("[host", MainActivity.normalizeHost("[host"))
+        assertEquals("host]", MainActivity.normalizeHost("host]"))
+    }
+
+    @Test
     fun isAllowedHost_acceptsConfiguredAdditionalHost() {
         val additional = MainActivity.parseAdditionalAllowedHosts("media.example.com,10.0.0.20")
 
