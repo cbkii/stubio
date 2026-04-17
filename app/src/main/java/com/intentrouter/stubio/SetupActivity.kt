@@ -86,8 +86,8 @@ class SetupActivity : AppCompatActivity() {
             val apps = cachedLaunchableApps ?: withContext(Dispatchers.IO) {
                 // Query installed apps and load icons on an IO thread — icon loading can be
                 // slow on low-RAM TV hardware and would otherwise block the main thread.
-                loadLaunchableApps().also { cachedLaunchableApps = it }
-            }
+                loadLaunchableApps()  
+        }.also { cachedLaunchableApps = it }
 
             setPickerButtonsEnabled(true)
 
