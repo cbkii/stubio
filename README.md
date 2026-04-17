@@ -93,6 +93,11 @@ adb shell am start \
 | `MainActivity` | Transparent routing activity — validates URI and launches the right player |
 | `StubioApp` | Application class — forces dark mode for consistent TV rendering |
 
+### Networking and compatibility note
+
+- Stubio does **not** make direct HTTP(S) requests in application code.
+- `android.permission.INTERNET` remains declared intentionally as a compatibility safeguard for routed playback intents where external player apps consume network stream URLs.
+
 ## CI
 
 - `.github/workflows/ci.yml` — lint, unit tests, debug + release assembles on every PR and push to `main`; lint reports uploaded as artifacts.

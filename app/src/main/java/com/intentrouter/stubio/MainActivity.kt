@@ -28,6 +28,12 @@ class MainActivity : AppCompatActivity() {
         private const val PREF_LAST_POSITION = "last_playback_position"
         private const val PREF_LAST_DURATION = "last_playback_duration"
         private const val PREF_STREMIO_SERVER_IP = "stremio_server_ip"
+        // Anchored: host must exactly match one of the supported entries.
+        private val LOOPBACK_HOST_REGEX = Regex("^127\\.0\\.0\\.1$")
+        private val ALLOWED_HOST_REGEX = Regex(
+            "^(?:localhost|192\\.168\\.[0-9]+\\.[0-9]+|10\\.[0-9]+\\.[0-9]+\\.[0-9]+|172\\.(1[6-9]|2[0-9]|3[0-1])\\.[0-9]+\\.[0-9]+|[a-zA-Z0-9.-]+\\.stremio\\.com|[a-zA-Z0-9.-]+\\.strem\\.io)$"
+        )
+        private val YOUTUBE_PATH_REGEX = Regex("/yt/([A-Za-z0-9_-]{11})")
 
         private var cachedStremioServer: String? = null
 
@@ -109,18 +115,13 @@ class MainActivity : AppCompatActivity() {
         if (uri.scheme.equals("stremio", ignoreCase = true)) return true
 
         val host = uri.host ?: return false
-        val allowedHostPatterns = listOf(
-            // Anchored: must be exactly 127.0.0.1, not 127.0.0.10 etc.
-            "^127\\.0\\.0\\.1$",
-            "^(?:localhost|192\\.168\\.[0-9]+\\.[0-9]+|10\\.[0-9]+\\.[0-9]+\\.[0-9]+|172\\.(1[6-9]|2[0-9]|3[0-1])\\.[0-9]+\\.[0-9]+|[a-zA-Z0-9.-]+\\.stremio\\.com|[a-zA-Z0-9.-]+\\.strem\\.io)$"
-        )
-
-        return allowedHostPatterns.any { host.matches(it.toRegex()) } || host == getStoredStremioServer()
+        return host.matches(LOOPBACK_HOST_REGEX) ||
+            host.matches(ALLOWED_HOST_REGEX) ||
+            host == getStoredStremioServer()
     }
 
     private fun routeUri(uri: Uri, originalIntent: Intent) {
-        val youtubeRegex = """/yt/([A-Za-z0-9_-]{11})""".toRegex()
-        val match = youtubeRegex.find(uri.toString())
+        val match = YOUTUBE_PATH_REGEX.find(uri.toString())
         if (match != null) {
             launchYouTube("https://www.youtube.com/watch?v=${match.groupValues[1]}")
         } else {
