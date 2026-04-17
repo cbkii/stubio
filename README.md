@@ -28,6 +28,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - **TV player detection** — checks both `CATEGORY_LAUNCHER` and `CATEGORY_LEANBACK_LAUNCHER` so TV-only builds of VLC, SmartTube, etc. are found correctly.
 - **Async app picker** — icon loading runs off the main thread; buttons disable during load to prevent double-tap on slow TV hardware.
 - **10-foot legibility** — 18–40 sp typography, 64 dp D-pad targets, high-contrast purple theme, accent-coloured focus ring.
+- **Configurable URI allowlist extension** — Setup includes an "Additional allowed domains/IPs" field (comma-separated) that extends `MainActivity` host whitelisting beyond built-in localhost/private-network/Stremio domain rules.
 
 ## Build commands
 

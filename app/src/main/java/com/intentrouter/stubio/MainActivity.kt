@@ -36,6 +36,31 @@ class MainActivity : AppCompatActivity() {
         private val YOUTUBE_PATH_REGEX = Regex("/yt/([A-Za-z0-9_-]{11})")
 
         private var cachedStremioServer: String? = null
+        internal fun normalizeHost(value: String): String {
+            return value
+                .trim()
+                .lowercase()
+                .removePrefix("[")
+                .removeSuffix("]")
+        }
+
+        internal fun parseAdditionalAllowedHosts(rawValue: String?): Set<String> {
+            return rawValue
+                .orEmpty()
+                .split(",")
+                .asSequence()
+                .map { normalizeHost(it) }
+                .filter { it.isNotEmpty() }
+                .toSet()
+        }
+
+        internal fun isAllowedHost(host: String, storedStremioServer: String, additionalAllowedHosts: Set<String>): Boolean {
+            val normalizedHost = normalizeHost(host)
+            return normalizedHost.matches(LOOPBACK_HOST_REGEX) ||
+                normalizedHost.matches(ALLOWED_HOST_REGEX) ||
+                normalizedHost == normalizeHost(storedStremioServer) ||
+                normalizedHost in additionalAllowedHosts
+        }
 
         fun sendPlaybackPositionToStremio(context: Context, position: Long, duration: Long) {
             if (position < 0 || duration <= 0) return
@@ -115,9 +140,7 @@ class MainActivity : AppCompatActivity() {
         if (uri.scheme.equals("stremio", ignoreCase = true)) return true
 
         val host = uri.host ?: return false
-        return host.matches(LOOPBACK_HOST_REGEX) ||
-            host.matches(ALLOWED_HOST_REGEX) ||
-            host == getStoredStremioServer()
+        return isAllowedHost(host, getStoredStremioServer(), getAdditionalAllowedHosts())
     }
 
     private fun routeUri(uri: Uri, originalIntent: Intent) {
@@ -317,5 +340,11 @@ class MainActivity : AppCompatActivity() {
             cachedStremioServer = ip
             ip
         }
+    }
+
+    private fun getAdditionalAllowedHosts(): Set<String> {
+        val value = getSharedPreferences(SetupActivity.PREFS_NAME, MODE_PRIVATE)
+            .getString(SetupActivity.KEY_ADDITIONAL_ALLOWED_HOSTS, null)
+        return parseAdditionalAllowedHosts(value)
     }
 }

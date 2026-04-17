@@ -32,4 +32,7 @@
 
     <string name="info_streams">Used for movie and episode playback intents.</string>
     <string name="info_trailers">Used when Stubio routes trailer links to YouTube-compatible apps.</string>
+    <string name="label_additional_allowed_hosts">Additional allowed domains/IPs (comma-separated)</string>
+    <string name="info_additional_allowed_hosts">Optional host allowlist extension used by URI validation. Example: media.example.com, 192.168.1.80, 10.0.0.25</string>
+    <string name="hint_additional_allowed_hosts">media.example.com, 192.168.1.80</string>
 </resources>
