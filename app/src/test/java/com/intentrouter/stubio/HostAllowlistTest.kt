@@ -22,6 +22,13 @@ class HostAllowlistTest {
     }
 
     @Test
+    fun parseAdditionalAllowedHosts_discardsInvalidHostTokens() {
+        val parsed = MainActivity.parseAdditionalAllowedHosts("ok.example.com, bad host, x, 999.1.1.1, 10.0.0.1")
+
+        assertEquals(setOf("ok.example.com", "10.0.0.1"), parsed)
+    }
+
+    @Test
     fun isAllowedHost_acceptsConfiguredAdditionalHost() {
         val additional = MainActivity.parseAdditionalAllowedHosts("media.example.com,10.0.0.20")
 

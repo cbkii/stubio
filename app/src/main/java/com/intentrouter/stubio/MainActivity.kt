@@ -33,6 +33,12 @@ class MainActivity : AppCompatActivity() {
         private val ALLOWED_HOST_REGEX = Regex(
             "^(?:localhost|192\\.168\\.[0-9]+\\.[0-9]+|10\\.[0-9]+\\.[0-9]+\\.[0-9]+|172\\.(1[6-9]|2[0-9]|3[0-1])\\.[0-9]+\\.[0-9]+|[a-zA-Z0-9.-]+\\.stremio\\.com|[a-zA-Z0-9.-]+\\.strem\\.io)$"
         )
+        private val IPV4_HOST_REGEX = Regex("^(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})\\.){3}(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})$")
+        private val DOMAIN_HOST_REGEX = Regex(
+            "^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])$",
+            RegexOption.IGNORE_CASE
+        )
+        private val IPV6_HOST_REGEX = Regex("^(?=.*:)[0-9a-f:]+(?:%[0-9A-Za-z._~-]+)?$", RegexOption.IGNORE_CASE)
         private val YOUTUBE_PATH_REGEX = Regex("/yt/([A-Za-z0-9_-]{11})")
 
         private var cachedStremioServer: String? = null
@@ -57,8 +63,15 @@ class MainActivity : AppCompatActivity() {
                 .split(",")
                 .asSequence()
                 .map { normalizeHost(it) }
-                .filter { it.isNotEmpty() }
+                .filter { isValidAdditionalAllowedHost(it) }
                 .toSet()
+        }
+
+        internal fun isValidAdditionalAllowedHost(host: String): Boolean {
+            if (host.isBlank()) return false
+            return host.matches(IPV4_HOST_REGEX) ||
+                host.matches(DOMAIN_HOST_REGEX) ||
+                host.matches(IPV6_HOST_REGEX)
         }
 
         internal fun isAllowedHost(host: String, storedStremioServer: String, additionalAllowedHosts: Set<String>): Boolean {

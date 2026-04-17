@@ -141,6 +141,7 @@
             android:maxLines="1"
             android:nextFocusDown="@id/btnSave"
             android:paddingHorizontal="16dp"
+            android:scrollHorizontally="true"
             android:textColor="@color/text_primary"
             android:textColorHint="@color/text_hint"
             android:textSize="18sp" />
