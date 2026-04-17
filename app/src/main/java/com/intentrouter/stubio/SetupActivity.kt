@@ -37,6 +37,7 @@ class SetupActivity : AppCompatActivity() {
     private lateinit var btnPickTrailerFallback: ImageButton
 
     private lateinit var btnSave: Button
+    private var cachedLaunchableApps: List<LaunchableApp>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -80,9 +81,11 @@ class SetupActivity : AppCompatActivity() {
         setPickerButtonsEnabled(false)
 
         lifecycleScope.launch {
-            // Query installed apps and load icons on an IO thread — icon loading can be
-            // slow on low-RAM TV hardware and would otherwise block the main thread.
-            val apps = withContext(Dispatchers.IO) { loadLaunchableApps() }
+            val apps = cachedLaunchableApps ?: withContext(Dispatchers.IO) {
+                // Query installed apps and load icons on an IO thread — icon loading can be
+                // slow on low-RAM TV hardware and would otherwise block the main thread.
+                loadLaunchableApps().also { cachedLaunchableApps = it }
+            }
 
             setPickerButtonsEnabled(true)
 
