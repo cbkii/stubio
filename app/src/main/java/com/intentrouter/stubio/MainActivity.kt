@@ -28,60 +28,30 @@ class MainActivity : AppCompatActivity() {
         private const val PREF_LAST_POSITION = "last_playback_position"
         private const val PREF_LAST_DURATION = "last_playback_duration"
         private const val PREF_STREMIO_SERVER_IP = "stremio_server_ip"
-        // Anchored: host must exactly match one of the supported entries.
-        private val LOOPBACK_HOST_REGEX = Regex("^127\\.0\\.0\\.1$")
+        private const val LOOPBACK_HOST = "127.0.0.1"
         private val ALLOWED_HOST_REGEX = Regex(
             "^(?:localhost|192\\.168\\.[0-9]+\\.[0-9]+|10\\.[0-9]+\\.[0-9]+\\.[0-9]+|172\\.(1[6-9]|2[0-9]|3[0-1])\\.[0-9]+\\.[0-9]+|[a-zA-Z0-9.-]+\\.stremio\\.com|[a-zA-Z0-9.-]+\\.strem\\.io)$"
         )
-        private val IPV4_OCTET_REGEX = "(?:0|[1-9]\\d?|1\\d\\d|2[0-4]\\d|25[0-5])"
-        private val IPV4_HOST_REGEX = Regex("^(?:$IPV4_OCTET_REGEX\\.){3}$IPV4_OCTET_REGEX$")
-        private val DOMAIN_HOST_REGEX = Regex(
-            "^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])$",
-            RegexOption.IGNORE_CASE
-        )
-        private val IPV6_HOST_REGEX = Regex("^(?=.*:)[0-9a-f:]+(?:%[0-9A-Za-z._~-]+)?$", RegexOption.IGNORE_CASE)
         private val YOUTUBE_PATH_REGEX = Regex("/yt/([A-Za-z0-9_-]{11})")
 
-        private var cachedStremioServer: String? = null
-        internal fun normalizeHost(value: String): String {
-            val trimmed = value.trim()
-            val unwrapped = if (trimmed.startsWith("[") && trimmed.endsWith("]") && trimmed.length >= 2) {
-                trimmed.substring(1, trimmed.length - 1)
-            } else {
-                trimmed
-            }
-            val zoneIndex = unwrapped.indexOf('%')
-            return if (zoneIndex >= 0) {
-                unwrapped.substring(0, zoneIndex).lowercase() + unwrapped.substring(zoneIndex)
-            } else {
-                unwrapped.lowercase()
-            }
-        }
+        internal fun normalizeHost(value: String): String =
+            value.trim().removeSurrounding("[", "]").lowercase()
 
         internal fun parseAdditionalAllowedHosts(rawValue: String?): Set<String> {
-            return rawValue
-                .orEmpty()
-                .split(",")
+            if (rawValue.isNullOrBlank()) return emptySet()
+            return rawValue.split(",")
                 .asSequence()
                 .map { normalizeHost(it) }
-                .filter { isValidAdditionalAllowedHost(it) }
+                .filter { it.isNotEmpty() }
                 .toSet()
         }
 
-        internal fun isValidAdditionalAllowedHost(host: String): Boolean {
-            if (host.isBlank()) return false
-            return host.matches(IPV4_HOST_REGEX) ||
-                host.matches(DOMAIN_HOST_REGEX) ||
-                host.matches(IPV6_HOST_REGEX)
-        }
-
         internal fun isAllowedHost(host: String, storedStremioServer: String, additionalAllowedHosts: Set<String>): Boolean {
-            val normalizedHost = normalizeHost(host)
-            val normalizedStoredServer = normalizeHost(storedStremioServer)
-            return normalizedHost.matches(LOOPBACK_HOST_REGEX) ||
-                normalizedHost.matches(ALLOWED_HOST_REGEX) ||
-                normalizedHost == normalizedStoredServer ||
-                normalizedHost in additionalAllowedHosts
+            val h = normalizeHost(host)
+            return h == LOOPBACK_HOST ||
+                h == storedStremioServer ||
+                h in additionalAllowedHosts ||
+                h.matches(ALLOWED_HOST_REGEX)
         }
 
         fun sendPlaybackPositionToStremio(context: Context, position: Long, duration: Long) {
@@ -106,7 +76,7 @@ class MainActivity : AppCompatActivity() {
     private var lastKnownPosition: Long = 0L
     private var lastKnownDuration: Long = 0L
     private var currentStreamUrl: String? = null
-    private var cachedAdditionalAllowedHostsRaw: String? = null
+    private var cachedStremioServer: String = LOOPBACK_HOST
     private var cachedAdditionalAllowedHosts: Set<String> = emptySet()
 
     private var streamReceiver: StreamResultReceiver? = null
@@ -119,6 +89,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         loadPlayerPackages()
+        loadAllowedHosts()
         restoreCachedPlaybackData()
         registerStreamReceiver()
         handleIncomingIntent(intent)
@@ -164,7 +135,7 @@ class MainActivity : AppCompatActivity() {
         if (uri.scheme.equals("stremio", ignoreCase = true)) return true
 
         val host = uri.host ?: return false
-        return isAllowedHost(host, getStoredStremioServer(), getAdditionalAllowedHosts())
+        return isAllowedHost(host, cachedStremioServer, cachedAdditionalAllowedHosts)
     }
 
     private fun routeUri(uri: Uri, originalIntent: Intent) {
@@ -356,22 +327,13 @@ class MainActivity : AppCompatActivity() {
             .apply()
     }
 
-    private fun getStoredStremioServer(): String {
-        return cachedStremioServer ?: run {
-            val ip = getSharedPreferences(SetupActivity.PREFS_NAME, MODE_PRIVATE)
-                .getString(PREF_STREMIO_SERVER_IP, "127.0.0.1")
-                ?: "127.0.0.1"
-            cachedStremioServer = ip
-            ip
-        }
-    }
-
-    private fun getAdditionalAllowedHosts(): Set<String> {
-        val value = getSharedPreferences(SetupActivity.PREFS_NAME, MODE_PRIVATE)
-            .getString(SetupActivity.KEY_ADDITIONAL_ALLOWED_HOSTS, null)
-        if (value == cachedAdditionalAllowedHostsRaw) return cachedAdditionalAllowedHosts
-        cachedAdditionalAllowedHostsRaw = value
-        cachedAdditionalAllowedHosts = parseAdditionalAllowedHosts(value)
-        return cachedAdditionalAllowedHosts
+    private fun loadAllowedHosts() {
+        val sp = getSharedPreferences(SetupActivity.PREFS_NAME, MODE_PRIVATE)
+        cachedStremioServer = normalizeHost(
+            sp.getString(PREF_STREMIO_SERVER_IP, LOOPBACK_HOST) ?: LOOPBACK_HOST
+        )
+        cachedAdditionalAllowedHosts = parseAdditionalAllowedHosts(
+            sp.getString(SetupActivity.KEY_ADDITIONAL_ALLOWED_HOSTS, null)
+        )
     }
 }
