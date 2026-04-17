@@ -132,7 +132,6 @@
             android:id="@+id/editAdditionalAllowedHosts"
             android:layout_width="match_parent"
             android:layout_height="64dp"
-            android:autofillHints=""
             android:background="@drawable/edit_text_bg"
             android:hint="@string/hint_additional_allowed_hosts"
             android:importantForAutofill="no"

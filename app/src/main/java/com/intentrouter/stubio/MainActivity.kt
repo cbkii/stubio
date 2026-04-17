@@ -33,7 +33,7 @@ class MainActivity : AppCompatActivity() {
         private val ALLOWED_HOST_REGEX = Regex(
             "^(?:localhost|192\\.168\\.[0-9]+\\.[0-9]+|10\\.[0-9]+\\.[0-9]+\\.[0-9]+|172\\.(1[6-9]|2[0-9]|3[0-1])\\.[0-9]+\\.[0-9]+|[a-zA-Z0-9.-]+\\.stremio\\.com|[a-zA-Z0-9.-]+\\.strem\\.io)$"
         )
-        private val IPV4_HOST_REGEX = Regex("^(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})\\.){3}(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})$")
+        private val IPV4_HOST_REGEX = Regex("^(?:(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)$")
         private val DOMAIN_HOST_REGEX = Regex(
             "^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])$",
             RegexOption.IGNORE_CASE
@@ -76,9 +76,10 @@ class MainActivity : AppCompatActivity() {
 
         internal fun isAllowedHost(host: String, storedStremioServer: String, additionalAllowedHosts: Set<String>): Boolean {
             val normalizedHost = normalizeHost(host)
+            val normalizedStoredServer = normalizeHost(storedStremioServer)
             return normalizedHost.matches(LOOPBACK_HOST_REGEX) ||
                 normalizedHost.matches(ALLOWED_HOST_REGEX) ||
-                normalizedHost == normalizeHost(storedStremioServer) ||
+                normalizedHost == normalizedStoredServer ||
                 normalizedHost in additionalAllowedHosts
         }
 
