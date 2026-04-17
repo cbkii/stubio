@@ -30,6 +30,7 @@ class SetupActivity : AppCompatActivity() {
     private lateinit var editStreamFallback: EditText
     private lateinit var editTrailerPrimary: EditText
     private lateinit var editTrailerFallback: EditText
+    private lateinit var editAdditionalAllowedHosts: EditText
 
     private lateinit var btnPickStreamPrimary: ImageButton
     private lateinit var btnPickStreamFallback: ImageButton
@@ -48,6 +49,7 @@ class SetupActivity : AppCompatActivity() {
         editStreamFallback = findViewById(R.id.editStreamFallback)
         editTrailerPrimary = findViewById(R.id.editTrailerPrimary)
         editTrailerFallback = findViewById(R.id.editTrailerFallback)
+        editAdditionalAllowedHosts = findViewById(R.id.editAdditionalAllowedHosts)
 
         btnPickStreamPrimary = findViewById(R.id.btnPickStreamPrimary)
         btnPickStreamFallback = findViewById(R.id.btnPickStreamFallback)
@@ -84,8 +86,8 @@ class SetupActivity : AppCompatActivity() {
             val apps = cachedLaunchableApps ?: withContext(Dispatchers.IO) {
                 // Query installed apps and load icons on an IO thread — icon loading can be
                 // slow on low-RAM TV hardware and would otherwise block the main thread.
-                loadLaunchableApps().also { cachedLaunchableApps = it }
-            }
+                loadLaunchableApps()  
+        }.also { cachedLaunchableApps = it }
 
             setPickerButtonsEnabled(true)
 
@@ -161,6 +163,7 @@ class SetupActivity : AppCompatActivity() {
         editStreamFallback.setText(sp.getString(KEY_STREAM_FALLBACK, ""))
         editTrailerPrimary.setText(sp.getString(KEY_TRAILER_PRIMARY, ""))
         editTrailerFallback.setText(sp.getString(KEY_TRAILER_FALLBACK, ""))
+        editAdditionalAllowedHosts.setText(sp.getString(KEY_ADDITIONAL_ALLOWED_HOSTS, ""))
     }
 
     private fun saveSettings() {
@@ -182,6 +185,7 @@ class SetupActivity : AppCompatActivity() {
             .putString(KEY_STREAM_FALLBACK, editStreamFallback.text.toString().trim())
             .putString(KEY_TRAILER_PRIMARY, editTrailerPrimary.text.toString().trim())
             .putString(KEY_TRAILER_FALLBACK, editTrailerFallback.text.toString().trim())
+            .putString(KEY_ADDITIONAL_ALLOWED_HOSTS, editAdditionalAllowedHosts.text.toString().trim())
             .apply()
 
         Toast.makeText(this, R.string.saved_confirmation, Toast.LENGTH_SHORT).show()
@@ -193,6 +197,7 @@ class SetupActivity : AppCompatActivity() {
         const val KEY_STREAM_FALLBACK = "stream_player_fallback"
         const val KEY_TRAILER_PRIMARY = "trailer_player_primary"
         const val KEY_TRAILER_FALLBACK = "trailer_player_fallback"
+        const val KEY_ADDITIONAL_ALLOWED_HOSTS = "additional_allowed_hosts"
 
         private val PACKAGE_PATTERN = Regex("^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+")
     }

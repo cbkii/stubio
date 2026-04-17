@@ -28,14 +28,31 @@ class MainActivity : AppCompatActivity() {
         private const val PREF_LAST_POSITION = "last_playback_position"
         private const val PREF_LAST_DURATION = "last_playback_duration"
         private const val PREF_STREMIO_SERVER_IP = "stremio_server_ip"
-        // Anchored: host must exactly match one of the supported entries.
-        private val LOOPBACK_HOST_REGEX = Regex("^127\\.0\\.0\\.1$")
+        private const val LOOPBACK_HOST = "127.0.0.1"
         private val ALLOWED_HOST_REGEX = Regex(
             "^(?:localhost|192\\.168\\.[0-9]+\\.[0-9]+|10\\.[0-9]+\\.[0-9]+\\.[0-9]+|172\\.(1[6-9]|2[0-9]|3[0-1])\\.[0-9]+\\.[0-9]+|[a-zA-Z0-9.-]+\\.stremio\\.com|[a-zA-Z0-9.-]+\\.strem\\.io)$"
         )
         private val YOUTUBE_PATH_REGEX = Regex("/yt/([A-Za-z0-9_-]{11})")
 
-        private var cachedStremioServer: String? = null
+        internal fun normalizeHost(value: String): String =
+            value.trim().removeSurrounding("[", "]").lowercase()
+
+        internal fun parseAdditionalAllowedHosts(rawValue: String?): Set<String> {
+            if (rawValue.isNullOrBlank()) return emptySet()
+            return rawValue.split(",")
+                .asSequence()
+                .map { normalizeHost(it) }
+                .filter { it.isNotEmpty() }
+                .toSet()
+        }
+
+        internal fun isAllowedHost(host: String, storedStremioServer: String, additionalAllowedHosts: Set<String>): Boolean {
+            val h = normalizeHost(host)
+            return h == LOOPBACK_HOST ||
+                h == storedStremioServer ||
+                h in additionalAllowedHosts ||
+                h.matches(ALLOWED_HOST_REGEX)
+        }
 
         fun sendPlaybackPositionToStremio(context: Context, position: Long, duration: Long) {
             if (position < 0 || duration <= 0) return
@@ -59,6 +76,8 @@ class MainActivity : AppCompatActivity() {
     private var lastKnownPosition: Long = 0L
     private var lastKnownDuration: Long = 0L
     private var currentStreamUrl: String? = null
+    private var cachedStremioServer: String = LOOPBACK_HOST
+    private var cachedAdditionalAllowedHosts: Set<String> = emptySet()
 
     private var streamReceiver: StreamResultReceiver? = null
     private var streamReceiverRegistered = false
@@ -70,6 +89,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         loadPlayerPackages()
+        loadAllowedHosts()
         restoreCachedPlaybackData()
         registerStreamReceiver()
         handleIncomingIntent(intent)
@@ -115,9 +135,7 @@ class MainActivity : AppCompatActivity() {
         if (uri.scheme.equals("stremio", ignoreCase = true)) return true
 
         val host = uri.host ?: return false
-        return host.matches(LOOPBACK_HOST_REGEX) ||
-            host.matches(ALLOWED_HOST_REGEX) ||
-            host == getStoredStremioServer()
+        return isAllowedHost(host, cachedStremioServer, cachedAdditionalAllowedHosts)
     }
 
     private fun routeUri(uri: Uri, originalIntent: Intent) {
@@ -309,13 +327,13 @@ class MainActivity : AppCompatActivity() {
             .apply()
     }
 
-    private fun getStoredStremioServer(): String {
-        return cachedStremioServer ?: run {
-            val ip = getSharedPreferences(SetupActivity.PREFS_NAME, MODE_PRIVATE)
-                .getString(PREF_STREMIO_SERVER_IP, "127.0.0.1")
-                ?: "127.0.0.1"
-            cachedStremioServer = ip
-            ip
-        }
+    private fun loadAllowedHosts() {
+        val sp = getSharedPreferences(SetupActivity.PREFS_NAME, MODE_PRIVATE)
+        cachedStremioServer = normalizeHost(
+            sp.getString(PREF_STREMIO_SERVER_IP, LOOPBACK_HOST) ?: LOOPBACK_HOST
+        )
+        cachedAdditionalAllowedHosts = parseAdditionalAllowedHosts(
+            sp.getString(SetupActivity.KEY_ADDITIONAL_ALLOWED_HOSTS, null)
+        )
     }
 }
