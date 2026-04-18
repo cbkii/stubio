@@ -114,13 +114,14 @@ class SetupActivity : AppCompatActivity() {
             .create()
 
         dialog.show()
-        val listView = dialog.listView
-        listView.post {
-            listView.requestFocus()
-            if (initialSelection >= 0) {
-                listView.setSelection(initialSelection)
-            } else {
-                listView.setSelection(0)
+        dialog.listView?.post {
+            dialog.listView?.let { listView ->
+                listView.requestFocus()
+                if (initialSelection >= 0) {
+                    listView.setSelection(initialSelection)
+                } else {
+                    listView.setSelection(0)
+                }
             }
         }
     }
