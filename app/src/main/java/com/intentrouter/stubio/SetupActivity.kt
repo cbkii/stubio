@@ -3,19 +3,11 @@ package com.intentrouter.stubio
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.view.KeyEvent
-import android.view.LayoutInflater
-import android.view.View
-import android.view.ViewGroup
-import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
-import android.widget.ImageView
-import android.widget.ListView
-import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -84,10 +76,8 @@ class SetupActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             val apps = cachedLaunchableApps ?: withContext(Dispatchers.IO) {
-                // Query installed apps and load icons on an IO thread — icon loading can be
-                // slow on low-RAM TV hardware and would otherwise block the main thread.
-                loadLaunchableApps()  
-        }.also { cachedLaunchableApps = it }
+                loadLaunchableApps()
+            }.also { cachedLaunchableApps = it }
 
             setPickerButtonsEnabled(true)
 
@@ -103,41 +93,43 @@ class SetupActivity : AppCompatActivity() {
     }
 
     private fun showAppPickerDialog(targetField: EditText, apps: List<LaunchableApp>) {
-        val dialogView = layoutInflater.inflate(R.layout.dialog_app_picker, null)
-        val appList = dialogView.findViewById<ListView>(R.id.listApps)
-        appList.choiceMode = ListView.CHOICE_MODE_SINGLE
-
-        appList.adapter = LaunchableAppsAdapter(layoutInflater, apps)
-        var selectedPackageName: String? = null
-
         val currentPackageName = targetField.text.toString().trim()
         val initialSelection = apps.indexOfFirst { it.packageName == currentPackageName }
-        if (initialSelection >= 0) {
-            selectedPackageName = apps[initialSelection].packageName
-            appList.setItemChecked(initialSelection, true)
-        }
+
+        // Battle-tested platform pattern: single-choice list dialog that reports selected index
+        // through builder callback. This avoids custom ListView click/focus edge-cases.
+        val labels = apps.map { app ->
+            "${app.appName}\n${app.packageName}"
+        }.toTypedArray()
 
         val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.app_picker_title)
-            .setView(dialogView)
-            .setPositiveButton(R.string.app_picker_ok) { _, _ ->
-                selectedPackageName?.let { targetField.setText(it) }
+            .setSingleChoiceItems(labels, initialSelection) { d, which ->
+                if (which in apps.indices) {
+                    selectAppPackage(targetField, apps[which].packageName)
+                    d.dismiss()
+                }
             }
             .setNegativeButton(R.string.app_picker_close, null)
             .create()
 
-        appList.setOnItemClickListener { _, _, position, _ ->
-            selectedPackageName = apps[position].packageName
-            appList.setItemChecked(position, true)
-        }
-
         dialog.show()
-        appList.post {
-            appList.requestFocus()
-            if (initialSelection >= 0) {
-                appList.setSelection(initialSelection)
+        dialog.listView?.post {
+            dialog.listView?.let { listView ->
+                listView.requestFocus()
+                if (initialSelection >= 0) {
+                    listView.setSelection(initialSelection)
+                } else {
+                    listView.setSelection(0)
+                }
             }
         }
+    }
+
+    private fun selectAppPackage(targetField: EditText, packageName: String) {
+        targetField.setText(packageName)
+        targetField.setSelection(packageName.length)
+        targetField.requestFocus()
     }
 
     private fun setPickerButtonsEnabled(enabled: Boolean) {
@@ -157,8 +149,7 @@ class SetupActivity : AppCompatActivity() {
         val standardIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val leanbackIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
 
-        // Use a LinkedHashMap keyed by package name to deduplicate before loading icons,
-        // preserving insertion order (standard apps first).
+        // Use a LinkedHashMap keyed by package name to deduplicate.
         val byPackage = LinkedHashMap<String, android.content.pm.ResolveInfo>()
         for (ri in queryLauncherActivities(pm, standardIntent)) byPackage[ri.activityInfo.packageName] = ri
         for (ri in queryLauncherActivities(pm, leanbackIntent)) byPackage.putIfAbsent(ri.activityInfo.packageName, ri)
@@ -167,8 +158,7 @@ class SetupActivity : AppCompatActivity() {
             .map {
                 LaunchableApp(
                     appName = it.loadLabel(pm)?.toString().orEmpty().ifBlank { it.activityInfo.packageName },
-                    packageName = it.activityInfo.packageName,
-                    icon = it.loadIcon(pm)
+                    packageName = it.activityInfo.packageName
                 )
             }
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.appName })
@@ -233,39 +223,5 @@ private fun queryLauncherActivities(pm: PackageManager, intent: Intent): List<an
 
 private data class LaunchableApp(
     val appName: String,
-    val packageName: String,
-    val icon: Drawable
+    val packageName: String
 )
-
-private class LaunchableAppsAdapter(
-    private val inflater: LayoutInflater,
-    private val apps: List<LaunchableApp>
-) : BaseAdapter() {
-
-    override fun getCount(): Int = apps.size
-    override fun getItem(position: Int): LaunchableApp = apps[position]
-    override fun getItemId(position: Int): Long = position.toLong()
-
-    override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-        val view: View
-        val holder: ViewHolder
-        if (convertView == null) {
-            view = inflater.inflate(R.layout.item_app_tile, parent, false)
-            holder = ViewHolder(view)
-            view.tag = holder
-        } else {
-            view = convertView
-            holder = view.tag as ViewHolder
-        }
-        val app = getItem(position)
-        holder.icon.setImageDrawable(app.icon)
-        holder.name.text = app.appName
-        view.contentDescription = "${app.appName}, ${app.packageName}"
-        return view
-    }
-
-    private class ViewHolder(view: View) {
-        val icon: ImageView = view.findViewById(R.id.imageAppIcon)
-        val name: TextView = view.findViewById(R.id.textAppName)
-    }
-}
