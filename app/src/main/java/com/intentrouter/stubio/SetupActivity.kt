@@ -105,15 +105,11 @@ class SetupActivity : AppCompatActivity() {
     private fun showAppPickerDialog(targetField: EditText, apps: List<LaunchableApp>) {
         val dialogView = layoutInflater.inflate(R.layout.dialog_app_picker, null)
         val appList = dialogView.findViewById<ListView>(R.id.listApps)
-        appList.choiceMode = ListView.CHOICE_MODE_SINGLE
 
         appList.adapter = LaunchableAppsAdapter(layoutInflater, apps)
 
         val currentPackageName = targetField.text.toString().trim()
         val initialSelection = apps.indexOfFirst { it.packageName == currentPackageName }
-        if (initialSelection >= 0) {
-            appList.setItemChecked(initialSelection, true)
-        }
 
         val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.app_picker_title)
