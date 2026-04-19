@@ -108,27 +108,23 @@ class SetupActivity : AppCompatActivity() {
         appList.choiceMode = ListView.CHOICE_MODE_SINGLE
 
         appList.adapter = LaunchableAppsAdapter(layoutInflater, apps)
-        var selectedPackageName: String? = null
 
         val currentPackageName = targetField.text.toString().trim()
         val initialSelection = apps.indexOfFirst { it.packageName == currentPackageName }
         if (initialSelection >= 0) {
-            selectedPackageName = apps[initialSelection].packageName
             appList.setItemChecked(initialSelection, true)
         }
 
         val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.app_picker_title)
             .setView(dialogView)
-            .setPositiveButton(R.string.app_picker_ok) { _, _ ->
-                selectedPackageName?.let { targetField.setText(it) }
-            }
             .setNegativeButton(R.string.app_picker_close, null)
             .create()
 
         appList.setOnItemClickListener { _, _, position, _ ->
-            selectedPackageName = apps[position].packageName
-            appList.setItemChecked(position, true)
+            targetField.setText(apps[position].packageName)
+            dialog.dismiss()
+            targetField.requestFocus()
         }
 
         dialog.show()
