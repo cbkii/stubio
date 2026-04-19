@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.os.Bundle
-import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -66,14 +65,6 @@ class SetupActivity : AppCompatActivity() {
         btnPickTrailerFallback.setOnClickListener { showAppPicker(editTrailerFallback) }
 
         btnSave.setOnClickListener { saveSettings() }
-        btnSave.setOnKeyListener { _, keyCode, event ->
-            if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)) {
-                saveSettings()
-                true
-            } else {
-                false
-            }
-        }
 
         editStreamPrimary.requestFocus()
     }

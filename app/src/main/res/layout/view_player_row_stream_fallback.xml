@@ -44,6 +44,7 @@
             android:maxLines="1"
             android:nextFocusDown="@id/editTrailerPrimary"
             android:nextFocusLeft="@id/btnPickStreamFallback"
+            android:nextFocusRight="@id/btnPickTrailerFallback"
             android:paddingHorizontal="16dp"
             android:textColor="@color/text_primary"
             android:textColorHint="@color/text_hint"

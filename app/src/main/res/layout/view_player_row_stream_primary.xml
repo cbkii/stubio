@@ -45,6 +45,7 @@
             android:maxLines="1"
             android:nextFocusDown="@id/editStreamFallback"
             android:nextFocusLeft="@id/btnPickStreamPrimary"
+            android:nextFocusRight="@id/btnPickTrailerPrimary"
             android:nextFocusUp="@id/btnSave"
             android:paddingHorizontal="16dp"
             android:textColor="@color/text_primary"
