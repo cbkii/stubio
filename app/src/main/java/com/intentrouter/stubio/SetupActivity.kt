@@ -106,8 +106,6 @@ class SetupActivity : AppCompatActivity() {
         val dialogView = layoutInflater.inflate(R.layout.dialog_app_picker, null)
         val appList = dialogView.findViewById<ListView>(R.id.listApps)
 
-        appList.adapter = LaunchableAppsAdapter(layoutInflater, apps)
-
         val currentPackageName = targetField.text.toString().trim()
         val initialSelection = apps.indexOfFirst { it.packageName == currentPackageName }
 
@@ -117,11 +115,20 @@ class SetupActivity : AppCompatActivity() {
             .setNegativeButton(R.string.app_picker_close, null)
             .create()
 
-        appList.setOnItemClickListener { _, _, position, _ ->
+        // Use per-item View.OnClickListener (via adapter callback) instead of
+        // ListView.setOnItemClickListener.  On Android TV (D-pad), individually
+        // focusable items can prevent onItemClick from firing because the item
+        // view's own click path takes precedence.  Per-item listeners are immune
+        // to this and work reliably on all API levels including TV API 28.
+        appList.adapter = LaunchableAppsAdapter(layoutInflater, apps) { position ->
             targetField.setText(apps[position].packageName)
             dialog.dismiss()
-            targetField.requestFocus()
         }
+
+        // Request focus on the target field AFTER the dialog window is fully
+        // removed; calling requestFocus() synchronously after dismiss() is
+        // unreliable because the dialog window may still be attached.
+        dialog.setOnDismissListener { targetField.requestFocus() }
 
         dialog.show()
         appList.post {
@@ -231,7 +238,8 @@ private data class LaunchableApp(
 
 private class LaunchableAppsAdapter(
     private val inflater: LayoutInflater,
-    private val apps: List<LaunchableApp>
+    private val apps: List<LaunchableApp>,
+    private val onItemClick: (Int) -> Unit
 ) : BaseAdapter() {
 
     override fun getCount(): Int = apps.size
@@ -253,6 +261,7 @@ private class LaunchableAppsAdapter(
         holder.icon.setImageDrawable(app.icon)
         holder.name.text = app.appName
         view.contentDescription = "${app.appName}, ${app.packageName}"
+        view.setOnClickListener { onItemClick(position) }
         return view
     }
 
