@@ -267,26 +267,35 @@ class MainActivity : AppCompatActivity() {
 
         selectedStreamPackage = listOf(streamPrimary, streamFallback, PLAYER_VLC, PLAYER_MX)
             .filter { it.isNotBlank() }
-            .firstOrNull { isPackageLaunchable(it) }
+            .firstOrNull { isPackageInstalled(it) }
             ?: PLAYER_VLC
 
         selectedTrailerPackage = listOf(trailerPrimary, trailerFallback, YT_SMARTTUBE, YT_OFFICIAL)
             .filter { it.isNotBlank() }
-            .firstOrNull { isPackageLaunchable(it) }
+            .firstOrNull { isPackageInstalled(it) }
             ?: YT_OFFICIAL
 
         selectedPlayerIsVlc = selectedStreamPackage == PLAYER_VLC
     }
 
     /**
-     * Returns true if [packageName] has any launchable entry point — either the standard
-     * LAUNCHER or the TV-specific LEANBACK_LAUNCHER.  Checking only getLaunchIntentForPackage
-     * misses TV-only apps (e.g. VLC for Android TV) that omit CATEGORY_LAUNCHER entirely.
+     * Returns true if [packageName] exists on the device.
+     *
+     * Setup now allows selecting packages beyond launcher-entry apps, so routing should
+     * validate against installation state rather than launcher categories.
      */
-    private fun isPackageLaunchable(packageName: String): Boolean {
-        val pm = packageManager
-        return pm.getLaunchIntentForPackage(packageName) != null ||
-            pm.getLeanbackLaunchIntentForPackage(packageName) != null
+    private fun isPackageInstalled(packageName: String): Boolean {
+        return runCatching {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getApplicationInfo(
+                    packageName,
+                    android.content.pm.PackageManager.ApplicationInfoFlags.of(0L)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getApplicationInfo(packageName, 0)
+            }
+        }.isSuccess
     }
 
     private fun restoreCachedPlaybackData() {

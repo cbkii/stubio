@@ -1,8 +1,10 @@
 package com.intentrouter.stubio
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
 import android.widget.Button
@@ -187,7 +189,7 @@ class SetupActivity : AppCompatActivity() {
         // This supports TV/mobile/other app types consistently in setup.
         return queryInstalledApplications(pm)
             .asSequence()
-            .filter { isUserInstalledApp(it) }
+            .filter { shouldIncludeAppInPicker(pm, it) }
             .map {
                 InstalledApp(
                     appName = it.loadLabel(pm)?.toString().orEmpty().ifBlank { it.packageName },
@@ -257,6 +259,34 @@ private fun isUserInstalledApp(appInfo: ApplicationInfo): Boolean {
     val isSystemApp = appInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0
     val isUpdatedSystemApp = appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP != 0
     return !isSystemApp || isUpdatedSystemApp
+}
+
+private fun shouldIncludeAppInPicker(pm: PackageManager, appInfo: ApplicationInfo): Boolean {
+    if (isUserInstalledApp(appInfo)) return true
+    val packageName = appInfo.packageName
+    return hasLauncherEntryPoint(pm, packageName) ||
+        handlesVideoIntent(pm, packageName) ||
+        handlesYoutubeIntent(pm, packageName)
+}
+
+private fun hasLauncherEntryPoint(pm: PackageManager, packageName: String): Boolean {
+    return pm.getLaunchIntentForPackage(packageName) != null ||
+        pm.getLeanbackLaunchIntentForPackage(packageName) != null
+}
+
+private fun handlesVideoIntent(pm: PackageManager, packageName: String): Boolean {
+    val videoIntent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(Uri.parse("http://127.0.0.1/stubio-test.mp4"), "video/*")
+        setPackage(packageName)
+    }
+    return videoIntent.resolveActivity(pm) != null
+}
+
+private fun handlesYoutubeIntent(pm: PackageManager, packageName: String): Boolean {
+    val youtubeIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=dQw4w9WgXcQ")).apply {
+        setPackage(packageName)
+    }
+    return youtubeIntent.resolveActivity(pm) != null
 }
 
 private data class InstalledApp(
