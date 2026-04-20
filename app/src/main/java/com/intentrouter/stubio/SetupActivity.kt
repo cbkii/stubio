@@ -1,7 +1,7 @@
 package com.intentrouter.stubio
 
 import android.content.Context
-import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.KeyEvent
@@ -30,7 +30,7 @@ class SetupActivity : AppCompatActivity() {
     private lateinit var btnPickTrailerFallback: ImageButton
 
     private lateinit var btnSave: Button
-    private var cachedLaunchableApps: List<LaunchableApp>? = null
+    private var cachedUserInstalledApps: List<InstalledApp>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,9 +75,9 @@ class SetupActivity : AppCompatActivity() {
         setPickerButtonsEnabled(false)
 
         lifecycleScope.launch {
-            val apps = cachedLaunchableApps ?: withContext(Dispatchers.IO) {
-                loadLaunchableApps()
-            }.also { cachedLaunchableApps = it }
+            val apps = cachedUserInstalledApps ?: withContext(Dispatchers.IO) {
+                loadUserInstalledApps()
+            }.also { cachedUserInstalledApps = it }
 
             setPickerButtonsEnabled(true)
 
@@ -92,34 +92,75 @@ class SetupActivity : AppCompatActivity() {
         }
     }
 
-    private fun showAppPickerDialog(targetField: EditText, apps: List<LaunchableApp>) {
+    private fun showAppPickerDialog(targetField: EditText, apps: List<InstalledApp>) {
         val currentPackageName = targetField.text.toString().trim()
         val initialSelection = apps.indexOfFirst { it.packageName == currentPackageName }
 
-        // Battle-tested platform pattern: single-choice list dialog that reports selected index
-        // through builder callback. This avoids custom ListView click/focus edge-cases.
+        // Keep each list row in a compact single line so TV focus/selection are unambiguous.
         val labels = apps.map { app ->
-            "${app.appName}\n${app.packageName}"
+            "${app.appName} (${app.packageName})"
         }.toTypedArray()
 
         val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.app_picker_title)
-            .setSingleChoiceItems(labels, initialSelection) { d, which ->
-                if (which in apps.indices) {
-                    selectAppPackage(targetField, apps[which].packageName)
-                    d.dismiss()
-                }
-            }
+            .setSingleChoiceItems(labels, initialSelection, null)
             .setNegativeButton(R.string.app_picker_close, null)
             .create()
 
         dialog.show()
         dialog.listView?.post {
             dialog.listView?.let { listView ->
+                listView.choiceMode = android.widget.ListView.CHOICE_MODE_SINGLE
+
+                val commitSelection: (Int) -> Unit = { selectedIndex ->
+                    if (selectedIndex in apps.indices) {
+                        selectAppPackage(targetField, apps[selectedIndex].packageName)
+                        dialog.dismiss()
+                    }
+                }
+
+                listView.setOnItemClickListener { _, _, position, _ ->
+                    commitSelection(position)
+                }
+
+                listView.setOnItemSelectedListener(object : android.widget.AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(
+                        parent: android.widget.AdapterView<*>?,
+                        view: android.view.View?,
+                        position: Int,
+                        id: Long
+                    ) {
+                        listView.setItemChecked(position, true)
+                    }
+
+                    override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+                })
+
+                // Explicitly handle TV remote OK/Enter keys against currently selected row.
+                // Handle on ACTION_UP so the selection state has already settled after DPAD navigation.
+                listView.setOnKeyListener { _, keyCode, event ->
+                    if (event.action == KeyEvent.ACTION_UP &&
+                        (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)
+                    ) {
+                        val selectedIndex = listView.checkedItemPosition.takeIf { it >= 0 }
+                            ?: listView.selectedItemPosition
+                        if (selectedIndex >= 0) {
+                            commitSelection(selectedIndex)
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                }
+
                 listView.requestFocus()
                 if (initialSelection >= 0) {
+                    listView.setItemChecked(initialSelection, true)
                     listView.setSelection(initialSelection)
                 } else {
+                    listView.setItemChecked(0, true)
                     listView.setSelection(0)
                 }
             }
@@ -139,29 +180,22 @@ class SetupActivity : AppCompatActivity() {
         btnPickTrailerFallback.isEnabled = enabled
     }
 
-    private fun loadLaunchableApps(): List<LaunchableApp> {
+    private fun loadUserInstalledApps(): List<InstalledApp> {
         val pm = packageManager
 
-        // Query both standard LAUNCHER and TV LEANBACK_LAUNCHER so that all installed
-        // apps (phone apps, TV-only apps, and apps supporting both) are included.
-        // Use flags=0 (not MATCH_DEFAULT_ONLY) because launcher activities are not
-        // required to also declare CATEGORY_DEFAULT.
-        val standardIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val leanbackIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-
-        // Use a LinkedHashMap keyed by package name to deduplicate.
-        val byPackage = LinkedHashMap<String, android.content.pm.ResolveInfo>()
-        for (ri in queryLauncherActivities(pm, standardIntent)) byPackage[ri.activityInfo.packageName] = ri
-        for (ri in queryLauncherActivities(pm, leanbackIntent)) byPackage.putIfAbsent(ri.activityInfo.packageName, ri)
-
-        return byPackage.values
+        // Include all user-installed apps, not only those exposing launcher activities.
+        // This supports TV/mobile/other app types consistently in setup.
+        return queryInstalledApplications(pm)
+            .asSequence()
+            .filter { isUserInstalledApp(it) }
             .map {
-                LaunchableApp(
-                    appName = it.loadLabel(pm)?.toString().orEmpty().ifBlank { it.activityInfo.packageName },
-                    packageName = it.activityInfo.packageName
+                InstalledApp(
+                    appName = it.loadLabel(pm)?.toString().orEmpty().ifBlank { it.packageName },
+                    packageName = it.packageName
                 )
             }
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.appName })
+            .toList()
     }
 
     private fun loadSavedSettings() {
@@ -210,18 +244,22 @@ class SetupActivity : AppCompatActivity() {
     }
 }
 
-// Launcher categories (LAUNCHER / LEANBACK_LAUNCHER) don't require CATEGORY_DEFAULT,
-// so use flags=0 to avoid filtering out apps that omit that category.
-private fun queryLauncherActivities(pm: PackageManager, intent: Intent): List<android.content.pm.ResolveInfo> {
+private fun queryInstalledApplications(pm: PackageManager): List<ApplicationInfo> {
     return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-        pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0L))
+        pm.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0L))
     } else {
         @Suppress("DEPRECATION")
-        pm.queryIntentActivities(intent, 0)
+        pm.getInstalledApplications(0)
     }
 }
 
-private data class LaunchableApp(
+private fun isUserInstalledApp(appInfo: ApplicationInfo): Boolean {
+    val isSystemApp = appInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0
+    val isUpdatedSystemApp = appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP != 0
+    return !isSystemApp || isUpdatedSystemApp
+}
+
+private data class InstalledApp(
     val appName: String,
     val packageName: String
 )
