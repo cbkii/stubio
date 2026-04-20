@@ -27,6 +27,7 @@
             android:background="@drawable/picker_button_bg"
             android:contentDescription="@string/btn_pick_trailer_primary"
             android:nextFocusDown="@id/btnPickTrailerFallback"
+            android:nextFocusLeft="@id/editStreamPrimary"
             android:nextFocusRight="@id/editTrailerPrimary"
             android:src="@android:drawable/ic_menu_search"
             app:tint="@color/text_primary" />

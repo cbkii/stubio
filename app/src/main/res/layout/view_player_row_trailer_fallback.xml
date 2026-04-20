@@ -26,7 +26,8 @@
             android:layout_marginEnd="12dp"
             android:background="@drawable/picker_button_bg"
             android:contentDescription="@string/btn_pick_trailer_fallback"
-            android:nextFocusDown="@id/btnSave"
+            android:nextFocusDown="@id/editAdditionalAllowedHosts"
+            android:nextFocusLeft="@id/editStreamFallback"
             android:nextFocusRight="@id/editTrailerFallback"
             android:src="@android:drawable/ic_menu_search"
             app:tint="@color/text_primary" />
@@ -42,7 +43,7 @@
             android:imeOptions="actionDone"
             android:inputType="text"
             android:maxLines="1"
-            android:nextFocusDown="@id/btnSave"
+            android:nextFocusDown="@id/editAdditionalAllowedHosts"
             android:nextFocusLeft="@id/btnPickTrailerFallback"
             android:paddingHorizontal="16dp"
             android:textColor="@color/text_primary"

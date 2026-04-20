@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.os.Bundle
-import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -66,14 +65,6 @@ class SetupActivity : AppCompatActivity() {
         btnPickTrailerFallback.setOnClickListener { showAppPicker(editTrailerFallback) }
 
         btnSave.setOnClickListener { saveSettings() }
-        btnSave.setOnKeyListener { _, keyCode, event ->
-            if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)) {
-                saveSettings()
-                true
-            } else {
-                false
-            }
-        }
 
         editStreamPrimary.requestFocus()
     }
@@ -105,31 +96,30 @@ class SetupActivity : AppCompatActivity() {
     private fun showAppPickerDialog(targetField: EditText, apps: List<LaunchableApp>) {
         val dialogView = layoutInflater.inflate(R.layout.dialog_app_picker, null)
         val appList = dialogView.findViewById<ListView>(R.id.listApps)
-        appList.choiceMode = ListView.CHOICE_MODE_SINGLE
-
-        appList.adapter = LaunchableAppsAdapter(layoutInflater, apps)
-        var selectedPackageName: String? = null
 
         val currentPackageName = targetField.text.toString().trim()
         val initialSelection = apps.indexOfFirst { it.packageName == currentPackageName }
-        if (initialSelection >= 0) {
-            selectedPackageName = apps[initialSelection].packageName
-            appList.setItemChecked(initialSelection, true)
-        }
 
         val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.app_picker_title)
             .setView(dialogView)
-            .setPositiveButton(R.string.app_picker_ok) { _, _ ->
-                selectedPackageName?.let { targetField.setText(it) }
-            }
             .setNegativeButton(R.string.app_picker_close, null)
             .create()
 
-        appList.setOnItemClickListener { _, _, position, _ ->
-            selectedPackageName = apps[position].packageName
-            appList.setItemChecked(position, true)
+        // Use per-item View.OnClickListener (via adapter callback) instead of
+        // ListView.setOnItemClickListener.  On Android TV (D-pad), individually
+        // focusable items can prevent onItemClick from firing because the item
+        // view's own click path takes precedence.  Per-item listeners are immune
+        // to this and work reliably on all API levels including TV API 28.
+        appList.adapter = LaunchableAppsAdapter(layoutInflater, apps) { position ->
+            targetField.setText(apps[position].packageName)
+            dialog.dismiss()
         }
+
+        // Request focus on the target field AFTER the dialog window is fully
+        // removed; calling requestFocus() synchronously after dismiss() is
+        // unreliable because the dialog window may still be attached.
+        dialog.setOnDismissListener { targetField.requestFocus() }
 
         dialog.show()
         appList.post {
@@ -239,7 +229,8 @@ private data class LaunchableApp(
 
 private class LaunchableAppsAdapter(
     private val inflater: LayoutInflater,
-    private val apps: List<LaunchableApp>
+    private val apps: List<LaunchableApp>,
+    private val onItemClick: (Int) -> Unit
 ) : BaseAdapter() {
 
     override fun getCount(): Int = apps.size
@@ -261,6 +252,7 @@ private class LaunchableAppsAdapter(
         holder.icon.setImageDrawable(app.icon)
         holder.name.text = app.appName
         view.contentDescription = "${app.appName}, ${app.packageName}"
+        view.setOnClickListener { onItemClick(position) }
         return view
     }
 
