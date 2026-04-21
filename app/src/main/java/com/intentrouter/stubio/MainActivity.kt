@@ -60,13 +60,25 @@ class MainActivity : AppCompatActivity() {
             uri: Uri,
             storedStremioServer: String,
             additionalAllowedHosts: Set<String>
-        ): Boolean {
-            val scheme = uri.scheme?.lowercase() ?: return false
-            if (scheme in ALWAYS_ALLOWED_URI_SCHEMES) return true
+        ): Boolean = isAllowedUriSchemeAndHost(
+            scheme = uri.scheme,
+            host = uri.host,
+            storedStremioServer = storedStremioServer,
+            additionalAllowedHosts = additionalAllowedHosts
+        )
 
-            return if (scheme in HOST_GATED_URI_SCHEMES) {
-                val host = uri.host ?: return false
-                isAllowedHost(host, storedStremioServer, additionalAllowedHosts)
+        internal fun isAllowedUriSchemeAndHost(
+            scheme: String?,
+            host: String?,
+            storedStremioServer: String,
+            additionalAllowedHosts: Set<String>
+        ): Boolean {
+            val normalizedScheme = scheme?.lowercase() ?: return false
+            if (normalizedScheme in ALWAYS_ALLOWED_URI_SCHEMES) return true
+
+            return if (normalizedScheme in HOST_GATED_URI_SCHEMES) {
+                val normalizedHost = host ?: return false
+                isAllowedHost(normalizedHost, storedStremioServer, additionalAllowedHosts)
             } else {
                 false
             }
