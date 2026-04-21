@@ -43,7 +43,7 @@
             android:imeOptions="actionNext"
             android:inputType="text"
             android:maxLines="1"
-            android:nextFocusDown="@id/editAdditionalAllowedHosts"
+            android:nextFocusDown="@id/editTrailerPrimary"
             android:nextFocusLeft="@id/btnPickStreamFallback"
             android:nextFocusRight="@id/btnPickTrailerFallback"
             android:nextFocusUp="@id/editStreamPrimary"
