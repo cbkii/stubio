@@ -2,19 +2,15 @@ package com.intentrouter.stubio
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import android.graphics.drawable.Drawable
+import android.net.Uri
 import android.os.Bundle
-import android.view.LayoutInflater
-import android.view.View
-import android.view.ViewGroup
-import android.widget.BaseAdapter
+import android.view.KeyEvent
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
-import android.widget.ImageView
 import android.widget.ListView
-import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -37,7 +33,7 @@ class SetupActivity : AppCompatActivity() {
     private lateinit var btnPickTrailerFallback: ImageButton
 
     private lateinit var btnSave: Button
-    private var cachedLaunchableApps: List<LaunchableApp>? = null
+    private var cachedUserInstalledApps: List<InstalledApp>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -70,19 +66,15 @@ class SetupActivity : AppCompatActivity() {
     }
 
     private fun showAppPicker(targetField: EditText) {
-        // Disable all picker buttons while loading to prevent double-tap on slow hardware.
         setPickerButtonsEnabled(false)
 
         lifecycleScope.launch {
-            val apps = cachedLaunchableApps ?: withContext(Dispatchers.IO) {
-                // Query installed apps and load icons on an IO thread — icon loading can be
-                // slow on low-RAM TV hardware and would otherwise block the main thread.
-                loadLaunchableApps()  
-        }.also { cachedLaunchableApps = it }
+            val apps = cachedUserInstalledApps ?: withContext(Dispatchers.IO) {
+                loadUserInstalledApps()
+            }.also { cachedUserInstalledApps = it }
 
             setPickerButtonsEnabled(true)
-
-            if (isFinishing) return@launch
+            if (isFinishing || isDestroyed) return@launch
 
             if (apps.isEmpty()) {
                 Toast.makeText(this@SetupActivity, R.string.no_apps_found, Toast.LENGTH_SHORT).show()
@@ -93,41 +85,86 @@ class SetupActivity : AppCompatActivity() {
         }
     }
 
-    private fun showAppPickerDialog(targetField: EditText, apps: List<LaunchableApp>) {
-        val dialogView = layoutInflater.inflate(R.layout.dialog_app_picker, null)
-        val appList = dialogView.findViewById<ListView>(R.id.listApps)
-
+    private fun showAppPickerDialog(targetField: EditText, apps: List<InstalledApp>) {
         val currentPackageName = targetField.text.toString().trim()
         val initialSelection = apps.indexOfFirst { it.packageName == currentPackageName }
 
+        val labels = apps.map { app ->
+            "${app.appName} (${app.packageName})"
+        }.toTypedArray()
+
+        var selectedIndex = if (initialSelection >= 0) initialSelection else 0
+        var committed = false
+
         val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.app_picker_title)
-            .setView(dialogView)
+            .setSingleChoiceItems(labels, selectedIndex) { _, which ->
+                selectedIndex = which
+            }
+            .setPositiveButton(R.string.app_picker_ok, null)
             .setNegativeButton(R.string.app_picker_close, null)
             .create()
 
-        // Use per-item View.OnClickListener (via adapter callback) instead of
-        // ListView.setOnItemClickListener.  On Android TV (D-pad), individually
-        // focusable items can prevent onItemClick from firing because the item
-        // view's own click path takes precedence.  Per-item listeners are immune
-        // to this and work reliably on all API levels including TV API 28.
-        appList.adapter = LaunchableAppsAdapter(layoutInflater, apps) { position ->
-            targetField.setText(apps[position].packageName)
-            dialog.dismiss()
+        dialog.setOnShowListener {
+            val listView = dialog.listView ?: return@setOnShowListener
+            val okButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            okButton.setOnClickListener {
+                if (committed) return@setOnClickListener
+                committed = true
+                if (selectedIndex in apps.indices) {
+                    selectAppPackage(targetField, apps[selectedIndex].packageName)
+                }
+                dialog.dismiss()
+            }
+
+            listView.choiceMode = ListView.CHOICE_MODE_SINGLE
+            listView.setItemChecked(selectedIndex, true)
+            listView.setSelection(selectedIndex)
+
+            listView.setOnItemSelectedListener(object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(
+                    parent: android.widget.AdapterView<*>?,
+                    view: android.view.View?,
+                    position: Int,
+                    id: Long
+                ) {
+                    selectedIndex = position
+                    listView.setItemChecked(position, true)
+                }
+
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            })
+
+            listView.setOnItemClickListener { _, _, position, _ ->
+                selectedIndex = position
+                listView.setItemChecked(position, true)
+            }
+
+            listView.setOnKeyListener { _, keyCode, event ->
+                if (event.action != KeyEvent.ACTION_UP || !isConfirmKey(keyCode)) {
+                    false
+                } else if (committed) {
+                    true
+                } else {
+                    val positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                    positiveButton?.performClick() ?: false
+                }
+            }
+
+            listView.requestFocus()
         }
 
-        // Request focus on the target field AFTER the dialog window is fully
-        // removed; calling requestFocus() synchronously after dismiss() is
-        // unreliable because the dialog window may still be attached.
-        dialog.setOnDismissListener { targetField.requestFocus() }
+        dialog.setOnDismissListener {
+            targetField.requestFocus()
+        }
 
         dialog.show()
-        appList.post {
-            appList.requestFocus()
-            if (initialSelection >= 0) {
-                appList.setSelection(initialSelection)
-            }
-        }
+    }
+
+    private fun selectAppPackage(targetField: EditText, packageName: String) {
+        targetField.setText(packageName)
+        targetField.setSelection(packageName.length)
+        targetField.requestFocus()
     }
 
     private fun setPickerButtonsEnabled(enabled: Boolean) {
@@ -137,31 +174,20 @@ class SetupActivity : AppCompatActivity() {
         btnPickTrailerFallback.isEnabled = enabled
     }
 
-    private fun loadLaunchableApps(): List<LaunchableApp> {
+    private fun loadUserInstalledApps(): List<InstalledApp> {
         val pm = packageManager
 
-        // Query both standard LAUNCHER and TV LEANBACK_LAUNCHER so that all installed
-        // apps (phone apps, TV-only apps, and apps supporting both) are included.
-        // Use flags=0 (not MATCH_DEFAULT_ONLY) because launcher activities are not
-        // required to also declare CATEGORY_DEFAULT.
-        val standardIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val leanbackIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-
-        // Use a LinkedHashMap keyed by package name to deduplicate before loading icons,
-        // preserving insertion order (standard apps first).
-        val byPackage = LinkedHashMap<String, android.content.pm.ResolveInfo>()
-        for (ri in queryLauncherActivities(pm, standardIntent)) byPackage[ri.activityInfo.packageName] = ri
-        for (ri in queryLauncherActivities(pm, leanbackIntent)) byPackage.putIfAbsent(ri.activityInfo.packageName, ri)
-
-        return byPackage.values
+        return queryInstalledApplications(pm)
+            .asSequence()
+            .filter { shouldIncludeAppInPicker(pm, it) }
             .map {
-                LaunchableApp(
-                    appName = it.loadLabel(pm)?.toString().orEmpty().ifBlank { it.activityInfo.packageName },
-                    packageName = it.activityInfo.packageName,
-                    icon = it.loadIcon(pm)
+                InstalledApp(
+                    appName = it.loadLabel(pm)?.toString().orEmpty().ifBlank { it.packageName },
+                    packageName = it.packageName
                 )
             }
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.appName })
+            .toList()
     }
 
     private fun loadSavedSettings() {
@@ -198,6 +224,13 @@ class SetupActivity : AppCompatActivity() {
         Toast.makeText(this, R.string.saved_confirmation, Toast.LENGTH_SHORT).show()
     }
 
+    private fun isConfirmKey(keyCode: Int): Boolean {
+        return keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+            keyCode == KeyEvent.KEYCODE_ENTER ||
+            keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER ||
+            keyCode == KeyEvent.KEYCODE_BUTTON_A
+    }
+
     companion object {
         const val PREFS_NAME = "StubioPrefs"
         const val KEY_STREAM_PRIMARY = "stream_player_primary"
@@ -210,54 +243,50 @@ class SetupActivity : AppCompatActivity() {
     }
 }
 
-// Launcher categories (LAUNCHER / LEANBACK_LAUNCHER) don't require CATEGORY_DEFAULT,
-// so use flags=0 to avoid filtering out apps that omit that category.
-private fun queryLauncherActivities(pm: PackageManager, intent: Intent): List<android.content.pm.ResolveInfo> {
+private fun queryInstalledApplications(pm: PackageManager): List<ApplicationInfo> {
     return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-        pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0L))
+        pm.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0L))
     } else {
         @Suppress("DEPRECATION")
-        pm.queryIntentActivities(intent, 0)
+        pm.getInstalledApplications(0)
     }
 }
 
-private data class LaunchableApp(
+private fun isUserInstalledApp(appInfo: ApplicationInfo): Boolean {
+    val isSystemApp = appInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0
+    val isUpdatedSystemApp = appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP != 0
+    return !isSystemApp || isUpdatedSystemApp
+}
+
+private fun shouldIncludeAppInPicker(pm: PackageManager, appInfo: ApplicationInfo): Boolean {
+    if (isUserInstalledApp(appInfo)) return true
+    val packageName = appInfo.packageName
+    return hasLauncherEntryPoint(pm, packageName) ||
+        handlesVideoIntent(pm, packageName) ||
+        handlesYoutubeIntent(pm, packageName)
+}
+
+private fun hasLauncherEntryPoint(pm: PackageManager, packageName: String): Boolean {
+    return pm.getLaunchIntentForPackage(packageName) != null ||
+        pm.getLeanbackLaunchIntentForPackage(packageName) != null
+}
+
+private fun handlesVideoIntent(pm: PackageManager, packageName: String): Boolean {
+    val videoIntent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(Uri.parse("http://127.0.0.1/stubio-test.mp4"), "video/*")
+        setPackage(packageName)
+    }
+    return videoIntent.resolveActivity(pm) != null
+}
+
+private fun handlesYoutubeIntent(pm: PackageManager, packageName: String): Boolean {
+    val youtubeIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=dQw4w9WgXcQ")).apply {
+        setPackage(packageName)
+    }
+    return youtubeIntent.resolveActivity(pm) != null
+}
+
+private data class InstalledApp(
     val appName: String,
-    val packageName: String,
-    val icon: Drawable
+    val packageName: String
 )
-
-private class LaunchableAppsAdapter(
-    private val inflater: LayoutInflater,
-    private val apps: List<LaunchableApp>,
-    private val onItemClick: (Int) -> Unit
-) : BaseAdapter() {
-
-    override fun getCount(): Int = apps.size
-    override fun getItem(position: Int): LaunchableApp = apps[position]
-    override fun getItemId(position: Int): Long = position.toLong()
-
-    override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-        val view: View
-        val holder: ViewHolder
-        if (convertView == null) {
-            view = inflater.inflate(R.layout.item_app_tile, parent, false)
-            holder = ViewHolder(view)
-            view.tag = holder
-        } else {
-            view = convertView
-            holder = view.tag as ViewHolder
-        }
-        val app = getItem(position)
-        holder.icon.setImageDrawable(app.icon)
-        holder.name.text = app.appName
-        view.contentDescription = "${app.appName}, ${app.packageName}"
-        view.setOnClickListener { onItemClick(position) }
-        return view
-    }
-
-    private class ViewHolder(view: View) {
-        val icon: ImageView = view.findViewById(R.id.imageAppIcon)
-        val name: TextView = view.findViewById(R.id.textAppName)
-    }
-}

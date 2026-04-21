@@ -20,6 +20,16 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
         </intent>
+        <!-- Required for handlesVideoIntent() / resolveFirstStreamPackage() to see
+             user-installed video players that do not appear in the explicit <package>
+             list below.  On Android 11+ (API 30+) getInstalledApplications() and
+             resolveActivity() only return packages visible to us; this intent query
+             makes all ACTION_VIEW video/* handlers visible regardless of whether they
+             expose a launcher entry. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="video/*" />
+        </intent>
         <package android:name="com.teamsmart.videomanager.tv" />
         <package android:name="org.videolan.vlc" />
         <package android:name="com.google.android.youtube" />

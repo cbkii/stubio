@@ -72,6 +72,8 @@ class MainActivity : AppCompatActivity() {
     private var selectedTrailerPackage: String = YT_OFFICIAL
     private var selectedStreamPackage: String = PLAYER_VLC
     private var selectedPlayerIsVlc: Boolean = true
+    private var streamPackageCandidates: List<String> = listOf(PLAYER_VLC, PLAYER_MX)
+    private var trailerPackageCandidates: List<String> = listOf(YT_SMARTTUBE, YT_OFFICIAL)
 
     private var lastKnownPosition: Long = 0L
     private var lastKnownDuration: Long = 0L
@@ -148,12 +150,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun launchYouTube(youtubeUrl: String) {
-        val ytIntent = Intent(Intent.ACTION_VIEW, Uri.parse(youtubeUrl)).apply {
-            setPackage(selectedTrailerPackage)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        }
-
-        if (ytIntent.resolveActivity(packageManager) != null) {
+        val resolvedTrailerPackage = resolveFirstTrailerPackage(youtubeUrl)
+        if (resolvedTrailerPackage != null) {
+            selectedTrailerPackage = resolvedTrailerPackage
+            val ytIntent = Intent(Intent.ACTION_VIEW, Uri.parse(youtubeUrl)).apply {
+                setPackage(resolvedTrailerPackage)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
             runCatching { startActivity(ytIntent) }
         }
         finish()
@@ -165,30 +168,20 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val playerIntent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(streamUri, "video/*")
-            setPackage(selectedStreamPackage)
-            putExtras(originalIntent.extras ?: Bundle())
-            if (selectedPlayerIsVlc) {
-                putExtra("extra_position", lastKnownPosition)
-                putExtra("extra_duration", lastKnownDuration)
-            } else {
-                putExtra("position", lastKnownPosition)
-                putExtra("duration", lastKnownDuration)
-            }
-            putExtra("return_result", true)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val resolvedStreamPackage = resolveFirstStreamPackage(streamUri, originalIntent.extras ?: Bundle())
+        if (resolvedStreamPackage == null) {
+            finish()
+            return
         }
 
-        if (playerIntent.resolveActivity(packageManager) != null) {
-            runCatching { streamResultLauncher.launch(playerIntent) }
-                .onFailure {
-                    if (BuildConfig.DEBUG) Log.e(TAG, "Unable to launch stream player", it)
-                    finish()
-                }
-        } else {
-            finish()
-        }
+        updateSelectedStreamPackage(resolvedStreamPackage)
+
+        val playerIntent = buildStreamIntent(streamUri, resolvedStreamPackage, originalIntent.extras ?: Bundle())
+        runCatching { streamResultLauncher.launch(playerIntent) }
+            .onFailure {
+                if (BuildConfig.DEBUG) Log.e(TAG, "Unable to launch stream player", it)
+                finish()
+            }
     }
 
     private fun handleExternalPlayerResult(resultCode: Int, data: Intent?) {
@@ -265,28 +258,91 @@ class MainActivity : AppCompatActivity() {
         val trailerPrimary = sp.getString(SetupActivity.KEY_TRAILER_PRIMARY, "")?.trim().orEmpty()
         val trailerFallback = sp.getString(SetupActivity.KEY_TRAILER_FALLBACK, "")?.trim().orEmpty()
 
-        selectedStreamPackage = listOf(streamPrimary, streamFallback, PLAYER_VLC, PLAYER_MX)
+        streamPackageCandidates = listOf(streamPrimary, streamFallback, PLAYER_VLC, PLAYER_MX)
             .filter { it.isNotBlank() }
-            .firstOrNull { isPackageLaunchable(it) }
+            .distinct()
+
+        selectedStreamPackage = streamPackageCandidates
+            .firstOrNull { isPackageInstalled(it) }
+            ?: streamPackageCandidates.firstOrNull()
             ?: PLAYER_VLC
 
-        selectedTrailerPackage = listOf(trailerPrimary, trailerFallback, YT_SMARTTUBE, YT_OFFICIAL)
+        trailerPackageCandidates = listOf(trailerPrimary, trailerFallback, YT_SMARTTUBE, YT_OFFICIAL)
             .filter { it.isNotBlank() }
-            .firstOrNull { isPackageLaunchable(it) }
+            .distinct()
+
+        selectedTrailerPackage = trailerPackageCandidates
+            .firstOrNull { isPackageInstalled(it) }
+            ?: trailerPackageCandidates.firstOrNull()
             ?: YT_OFFICIAL
 
         selectedPlayerIsVlc = selectedStreamPackage == PLAYER_VLC
     }
 
+    private fun resolveFirstTrailerPackage(youtubeUrl: String): String? {
+        val youtubeUri = Uri.parse(youtubeUrl)
+        return trailerPackageCandidates.firstOrNull { packageName ->
+            val intent = Intent(Intent.ACTION_VIEW, youtubeUri).setPackage(packageName)
+            isPackageInstalled(packageName) && intent.resolveActivity(packageManager) != null
+        }
+    }
+
+    private fun resolveFirstStreamPackage(streamUri: Uri, extras: Bundle): String? {
+        return streamPackageCandidates.firstOrNull { packageName ->
+            isPackageInstalled(packageName) &&
+                buildStreamIntent(streamUri, packageName, extras).resolveActivity(packageManager) != null
+        }
+    }
+
+    private fun buildStreamIntent(streamUri: Uri, packageName: String, extras: Bundle): Intent {
+        val packageIsVlc = packageName == PLAYER_VLC
+        return Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(streamUri, "video/*")
+            setPackage(packageName)
+            putExtras(extras)
+            if (packageIsVlc) {
+                putExtra("extra_position", lastKnownPosition)
+                putExtra("extra_duration", lastKnownDuration)
+            } else {
+                putExtra("position", lastKnownPosition)
+                putExtra("duration", lastKnownDuration)
+            }
+            putExtra("return_result", true)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }
+
+    private fun updateSelectedStreamPackage(packageName: String) {
+        if (selectedStreamPackage == packageName) return
+        val wasRegistered = streamReceiverRegistered
+        if (wasRegistered) {
+            unregisterStreamReceiver()
+        }
+        selectedStreamPackage = packageName
+        selectedPlayerIsVlc = packageName == PLAYER_VLC
+        if (wasRegistered) {
+            registerStreamReceiver()
+        }
+    }
+
     /**
-     * Returns true if [packageName] has any launchable entry point — either the standard
-     * LAUNCHER or the TV-specific LEANBACK_LAUNCHER.  Checking only getLaunchIntentForPackage
-     * misses TV-only apps (e.g. VLC for Android TV) that omit CATEGORY_LAUNCHER entirely.
+     * Returns true if [packageName] exists on the device.
+     *
+     * Setup now allows selecting packages beyond launcher-entry apps, so routing should
+     * validate against installation state rather than launcher categories.
      */
-    private fun isPackageLaunchable(packageName: String): Boolean {
-        val pm = packageManager
-        return pm.getLaunchIntentForPackage(packageName) != null ||
-            pm.getLeanbackLaunchIntentForPackage(packageName) != null
+    private fun isPackageInstalled(packageName: String): Boolean {
+        return runCatching {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getApplicationInfo(
+                    packageName,
+                    android.content.pm.PackageManager.ApplicationInfoFlags.of(0L)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getApplicationInfo(packageName, 0)
+            }
+        }.isSuccess
     }
 
     private fun restoreCachedPlaybackData() {

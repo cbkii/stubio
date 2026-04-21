@@ -2,7 +2,7 @@
     <string name="app_name">Stubio</string>
 
     <string name="setup_title">Stubio TV Setup</string>
-    <string name="setup_subtitle">Configure which installed TV apps should handle streams and trailers. Navigation is fully remote-friendly.</string>
+    <string name="setup_subtitle">Configure which installed apps should handle streams and trailers. Navigation is fully remote-friendly.</string>
 
     <string name="section_streams">Streams</string>
     <string name="section_trailers">Trailers</string>
@@ -23,8 +23,9 @@
     <string name="btn_pick_trailer_fallback">Pick fallback trailer player</string>
 
     <string name="app_picker_title">Installed TV apps</string>
+    <string name="app_picker_ok">OK</string>
     <string name="app_picker_close">Close</string>
-    <string name="no_apps_found">No launchable TV apps were found on this device.</string>
+    <string name="no_apps_found">No user-installed apps were found on this device.</string>
 
     <string name="btn_save">Save settings</string>
     <string name="saved_confirmation">Settings saved.</string>
