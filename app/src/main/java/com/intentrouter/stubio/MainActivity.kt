@@ -29,6 +29,8 @@ class MainActivity : AppCompatActivity() {
         private const val PREF_LAST_DURATION = "last_playback_duration"
         private const val PREF_STREMIO_SERVER_IP = "stremio_server_ip"
         private const val LOOPBACK_HOST = "127.0.0.1"
+        private val ALWAYS_ALLOWED_URI_SCHEMES = setOf("stremio", "content", "file", "intent", "android-app")
+        private val HOST_GATED_URI_SCHEMES = setOf("http", "https", "rtsp", "rtsps")
         private val ALLOWED_HOST_REGEX = Regex(
             "^(?:localhost|192\\.168\\.[0-9]+\\.[0-9]+|10\\.[0-9]+\\.[0-9]+\\.[0-9]+|172\\.(1[6-9]|2[0-9]|3[0-1])\\.[0-9]+\\.[0-9]+|[a-zA-Z0-9.-]+\\.stremio\\.com|[a-zA-Z0-9.-]+\\.strem\\.io)$"
         )
@@ -52,6 +54,34 @@ class MainActivity : AppCompatActivity() {
                 h == storedStremioServer ||
                 h in additionalAllowedHosts ||
                 h.matches(ALLOWED_HOST_REGEX)
+        }
+
+        internal fun isAllowedUri(
+            uri: Uri,
+            storedStremioServer: String,
+            additionalAllowedHosts: Set<String>
+        ): Boolean = isAllowedUriSchemeAndHost(
+            scheme = uri.scheme,
+            host = uri.host,
+            storedStremioServer = storedStremioServer,
+            additionalAllowedHosts = additionalAllowedHosts
+        )
+
+        internal fun isAllowedUriSchemeAndHost(
+            scheme: String?,
+            host: String?,
+            storedStremioServer: String,
+            additionalAllowedHosts: Set<String>
+        ): Boolean {
+            val normalizedScheme = scheme?.lowercase() ?: return false
+            if (normalizedScheme in ALWAYS_ALLOWED_URI_SCHEMES) return true
+
+            return if (normalizedScheme in HOST_GATED_URI_SCHEMES) {
+                val normalizedHost = host ?: return false
+                isAllowedHost(normalizedHost, storedStremioServer, additionalAllowedHosts)
+            } else {
+                false
+            }
         }
 
         fun sendPlaybackPositionToStremio(context: Context, position: Long, duration: Long) {
@@ -83,6 +113,10 @@ class MainActivity : AppCompatActivity() {
 
     private var streamReceiver: StreamResultReceiver? = null
     private var streamReceiverRegistered = false
+    private data class StreamLaunchTarget(
+        val packageName: String,
+        val useVideoMimeType: Boolean
+    )
 
     private val streamResultLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         handleExternalPlayerResult(result.resultCode, result.data)
@@ -134,28 +168,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun isAllowedUri(uri: Uri): Boolean {
-        if (uri.scheme.equals("stremio", ignoreCase = true)) return true
-
-        val host = uri.host ?: return false
-        return isAllowedHost(host, cachedStremioServer, cachedAdditionalAllowedHosts)
+        return isAllowedUri(uri, cachedStremioServer, cachedAdditionalAllowedHosts)
     }
 
     private fun routeUri(uri: Uri, originalIntent: Intent) {
         val match = YOUTUBE_PATH_REGEX.find(uri.toString())
         if (match != null) {
-            launchYouTube("https://www.youtube.com/watch?v=${match.groupValues[1]}")
+            launchYouTube(
+                youtubeUrl = "https://www.youtube.com/watch?v=${match.groupValues[1]}",
+                originalFlags = originalIntent.flags
+            )
         } else {
             launchStreamPlayer(originalIntent)
         }
     }
 
-    private fun launchYouTube(youtubeUrl: String) {
+    private fun launchYouTube(youtubeUrl: String, originalFlags: Int) {
         val resolvedTrailerPackage = resolveFirstTrailerPackage(youtubeUrl)
         if (resolvedTrailerPackage != null) {
             selectedTrailerPackage = resolvedTrailerPackage
             val ytIntent = Intent(Intent.ACTION_VIEW, Uri.parse(youtubeUrl)).apply {
                 setPackage(resolvedTrailerPackage)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                addFlags(resolveLaunchFlags(originalFlags))
             }
             runCatching { startActivity(ytIntent) }
         }
@@ -168,20 +202,37 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val resolvedStreamPackage = resolveFirstStreamPackage(streamUri, originalIntent.extras ?: Bundle())
-        if (resolvedStreamPackage == null) {
+        val launchFlags = resolveLaunchFlags(originalIntent.flags)
+        val streamLaunchTarget = resolveFirstStreamPackage(
+            streamUri = streamUri,
+            extras = originalIntent.extras ?: Bundle(),
+            launchFlags = launchFlags
+        )
+        if (streamLaunchTarget == null) {
             finish()
             return
         }
 
-        updateSelectedStreamPackage(resolvedStreamPackage)
+        updateSelectedStreamPackage(streamLaunchTarget.packageName)
 
-        val playerIntent = buildStreamIntent(streamUri, resolvedStreamPackage, originalIntent.extras ?: Bundle())
-        runCatching { streamResultLauncher.launch(playerIntent) }
-            .onFailure {
-                if (BuildConfig.DEBUG) Log.e(TAG, "Unable to launch stream player", it)
+        val playerIntent = buildStreamIntent(
+            streamUri = streamUri,
+            packageName = streamLaunchTarget.packageName,
+            extras = originalIntent.extras ?: Bundle(),
+            launchFlags = launchFlags,
+            useVideoMimeType = streamLaunchTarget.useVideoMimeType
+        )
+        runCatching {
+            if ((originalIntent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT) != 0) {
+                startActivity(playerIntent)
                 finish()
+            } else {
+                streamResultLauncher.launch(playerIntent)
             }
+        }.onFailure {
+            if (BuildConfig.DEBUG) Log.e(TAG, "Unable to launch stream player", it)
+            finish()
+        }
     }
 
     private fun handleExternalPlayerResult(resultCode: Int, data: Intent?) {
@@ -287,17 +338,63 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun resolveFirstStreamPackage(streamUri: Uri, extras: Bundle): String? {
-        return streamPackageCandidates.firstOrNull { packageName ->
-            isPackageInstalled(packageName) &&
-                buildStreamIntent(streamUri, packageName, extras).resolveActivity(packageManager) != null
+    private fun resolveFirstStreamPackage(
+        streamUri: Uri,
+        extras: Bundle,
+        launchFlags: Int
+    ): StreamLaunchTarget? {
+        return streamPackageCandidates.asSequence()
+            .filter { isPackageInstalled(it) }
+            .mapNotNull { packageName ->
+                val mimeIntent = buildStreamIntent(
+                    streamUri = streamUri,
+                    packageName = packageName,
+                    extras = extras,
+                    launchFlags = launchFlags,
+                    useVideoMimeType = true
+                )
+                if (mimeIntent.resolveActivity(packageManager) != null) {
+                    return@mapNotNull StreamLaunchTarget(packageName, true)
+                }
+
+                val dataOnlyIntent = buildStreamIntent(
+                    streamUri = streamUri,
+                    packageName = packageName,
+                    extras = extras,
+                    launchFlags = launchFlags,
+                    useVideoMimeType = false
+                )
+                if (dataOnlyIntent.resolveActivity(packageManager) != null) {
+                    StreamLaunchTarget(packageName, false)
+                } else {
+                    null
+                }
+            }
+            .firstOrNull()
+    }
+
+    private fun resolveLaunchFlags(originalFlags: Int): Int {
+        return if ((originalFlags and Intent.FLAG_ACTIVITY_FORWARD_RESULT) != 0) {
+            Intent.FLAG_ACTIVITY_FORWARD_RESULT or Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP
+        } else {
+            Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
         }
     }
 
-    private fun buildStreamIntent(streamUri: Uri, packageName: String, extras: Bundle): Intent {
+    private fun buildStreamIntent(
+        streamUri: Uri,
+        packageName: String,
+        extras: Bundle,
+        launchFlags: Int,
+        useVideoMimeType: Boolean
+    ): Intent {
         val packageIsVlc = packageName == PLAYER_VLC
         return Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(streamUri, "video/*")
+            if (useVideoMimeType) {
+                setDataAndType(streamUri, "video/*")
+            } else {
+                data = streamUri
+            }
             setPackage(packageName)
             putExtras(extras)
             if (packageIsVlc) {
@@ -308,7 +405,7 @@ class MainActivity : AppCompatActivity() {
                 putExtra("duration", lastKnownDuration)
             }
             putExtra("return_result", true)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(launchFlags or Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
     }
 

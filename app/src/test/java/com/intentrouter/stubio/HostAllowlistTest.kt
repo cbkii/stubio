@@ -61,4 +61,94 @@ class HostAllowlistTest {
         assertTrue(MainActivity.isAllowedHost("app.stremio.com", "127.0.0.1", empty))
         assertTrue(MainActivity.isAllowedHost("app.strem.io", "127.0.0.1", empty))
     }
+
+    @Test
+    fun isAllowedUri_acceptsLocalContentAndFileSchemesForRouting() {
+        val empty = emptySet<String>()
+
+        assertTrue(
+            MainActivity.isAllowedUriSchemeAndHost(
+                "content",
+                null,
+                "127.0.0.1",
+                empty
+            )
+        )
+        assertTrue(
+            MainActivity.isAllowedUriSchemeAndHost(
+                "file",
+                null,
+                "127.0.0.1",
+                empty
+            )
+        )
+    }
+
+    @Test
+    fun isAllowedUri_appliesHostAllowlistToHttpSchemesOnly() {
+        val additional = MainActivity.parseAdditionalAllowedHosts("media.example.com")
+
+        assertTrue(
+            MainActivity.isAllowedUriSchemeAndHost(
+                "https",
+                "media.example.com",
+                "127.0.0.1",
+                additional
+            )
+        )
+        assertFalse(
+            MainActivity.isAllowedUriSchemeAndHost(
+                "https",
+                "evil.example.com",
+                "127.0.0.1",
+                additional
+            )
+        )
+    }
+
+    @Test
+    fun isAllowedUri_acceptsIntentSchemeForLegacyDeepLinks() {
+        assertTrue(
+            MainActivity.isAllowedUriSchemeAndHost(
+                "intent",
+                "example",
+                "127.0.0.1",
+                emptySet()
+            )
+        )
+    }
+
+    @Test
+    fun isAllowedUri_acceptsAndroidAppSchemeForDeepLinkWrappers() {
+        assertTrue(
+            MainActivity.isAllowedUriSchemeAndHost(
+                "android-app",
+                "com.stremio.one",
+                "127.0.0.1",
+                emptySet()
+            )
+        )
+    }
+
+    @Test
+    fun isAllowedUri_appliesHostAllowlistToRtspSchemes() {
+        val additional = MainActivity.parseAdditionalAllowedHosts("media.example.com")
+
+        assertTrue(
+            MainActivity.isAllowedUriSchemeAndHost(
+                "rtsp",
+                "media.example.com",
+                "127.0.0.1",
+                additional
+            )
+        )
+        assertFalse(
+            MainActivity.isAllowedUriSchemeAndHost(
+                "rtsps",
+                "evil.example.com",
+                "127.0.0.1",
+                additional
+            )
+        )
+    }
 }

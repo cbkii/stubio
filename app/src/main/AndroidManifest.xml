@@ -77,6 +77,10 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="http" />
                 <data android:scheme="https" />
+                <data android:scheme="rtsp" />
+                <data android:scheme="rtsps" />
+                <data android:scheme="intent" />
+                <data android:scheme="android-app" />
                 <data android:scheme="stremio" />
                 <data android:scheme="content" />
                 <data android:scheme="file" />
