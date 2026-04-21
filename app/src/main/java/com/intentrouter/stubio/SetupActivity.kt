@@ -7,6 +7,10 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
@@ -60,14 +64,6 @@ class SetupActivity : AppCompatActivity() {
         btnPickTrailerFallback.setOnClickListener { showAppPicker(editTrailerFallback) }
 
         btnSave.setOnClickListener { saveSettings() }
-        btnSave.setOnKeyListener { _, keyCode, event ->
-            if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)) {
-                saveSettings()
-                true
-            } else {
-                false
-            }
-        }
 
         editStreamPrimary.requestFocus()
     }
@@ -278,6 +274,33 @@ private fun handlesVideoIntent(pm: PackageManager, packageName: String): Boolean
     val videoIntent = Intent(Intent.ACTION_VIEW).apply {
         setDataAndType(Uri.parse("http://127.0.0.1/stubio-test.mp4"), "video/*")
         setPackage(packageName)
+private class LaunchableAppsAdapter(
+    private val inflater: LayoutInflater,
+    private val apps: List<LaunchableApp>,
+    private val onItemClick: (Int) -> Unit
+) : BaseAdapter() {
+
+    override fun getCount(): Int = apps.size
+    override fun getItem(position: Int): LaunchableApp = apps[position]
+    override fun getItemId(position: Int): Long = position.toLong()
+
+    override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+        val view: View
+        val holder: ViewHolder
+        if (convertView == null) {
+            view = inflater.inflate(R.layout.item_app_tile, parent, false)
+            holder = ViewHolder(view)
+            view.tag = holder
+        } else {
+            view = convertView
+            holder = view.tag as ViewHolder
+        }
+        val app = getItem(position)
+        holder.icon.setImageDrawable(app.icon)
+        holder.name.text = app.appName
+        view.contentDescription = "${app.appName}, ${app.packageName}"
+        view.setOnClickListener { onItemClick(position) }
+        return view
     }
     return videoIntent.resolveActivity(pm) != null
 }

@@ -1,10 +1,10 @@
-# Stubio for Android TV
-
-Stubio is a small routing app you select once, then it forwards playback to your preferred external players.
-
 <p align="center">
   <img src="artwork/launcher/stubio-icon.svg" alt="Stubio app icon" width="160" />
 </p>
+
+# Stubio for Android TV
+
+Stubio is a small routing app you select once, then it forwards playback to your preferred external players.
 
 In other words: **choose Stubio as the app to open Stremio links**, and Stubio will choose the right player package for:
 - **Streams** (movies/episodes)
