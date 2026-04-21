@@ -1,5 +1,6 @@
 package com.intentrouter.stubio
 
+import android.net.Uri
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -60,5 +61,87 @@ class HostAllowlistTest {
         assertTrue(MainActivity.isAllowedHost("10.0.0.1", "127.0.0.1", empty))
         assertTrue(MainActivity.isAllowedHost("app.stremio.com", "127.0.0.1", empty))
         assertTrue(MainActivity.isAllowedHost("app.strem.io", "127.0.0.1", empty))
+    }
+
+    @Test
+    fun isAllowedUri_acceptsLocalContentAndFileSchemesForRouting() {
+        val empty = emptySet<String>()
+
+        assertTrue(
+            MainActivity.isAllowedUri(
+                Uri.parse("content://com.stremio.one.provider/stream/123"),
+                "127.0.0.1",
+                empty
+            )
+        )
+        assertTrue(
+            MainActivity.isAllowedUri(
+                Uri.parse("file:///storage/emulated/0/Movies/test.mkv"),
+                "127.0.0.1",
+                empty
+            )
+        )
+    }
+
+    @Test
+    fun isAllowedUri_appliesHostAllowlistToHttpSchemesOnly() {
+        val additional = MainActivity.parseAdditionalAllowedHosts("media.example.com")
+
+        assertTrue(
+            MainActivity.isAllowedUri(
+                Uri.parse("https://media.example.com/stream.m3u8"),
+                "127.0.0.1",
+                additional
+            )
+        )
+        assertFalse(
+            MainActivity.isAllowedUri(
+                Uri.parse("https://evil.example.com/stream.m3u8"),
+                "127.0.0.1",
+                additional
+            )
+        )
+    }
+
+    @Test
+    fun isAllowedUri_acceptsIntentSchemeForLegacyDeepLinks() {
+        assertTrue(
+            MainActivity.isAllowedUri(
+                Uri.parse("intent://example/stream/123"),
+                "127.0.0.1",
+                emptySet()
+            )
+        )
+    }
+
+    @Test
+    fun isAllowedUri_acceptsAndroidAppSchemeForDeepLinkWrappers() {
+        assertTrue(
+            MainActivity.isAllowedUri(
+                Uri.parse("android-app://com.stremio.one/http/example.com/stream"),
+                "127.0.0.1",
+                emptySet()
+            )
+        )
+    }
+
+    @Test
+    fun isAllowedUri_appliesHostAllowlistToRtspSchemes() {
+        val additional = MainActivity.parseAdditionalAllowedHosts("media.example.com")
+
+        assertTrue(
+            MainActivity.isAllowedUri(
+                Uri.parse("rtsp://media.example.com/live"),
+                "127.0.0.1",
+                additional
+            )
+        )
+        assertFalse(
+            MainActivity.isAllowedUri(
+                Uri.parse("rtsps://evil.example.com/live"),
+                "127.0.0.1",
+                additional
+            )
+        )
     }
 }
