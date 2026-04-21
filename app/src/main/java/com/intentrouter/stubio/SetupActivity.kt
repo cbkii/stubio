@@ -61,14 +61,6 @@ class SetupActivity : AppCompatActivity() {
         btnPickTrailerFallback.setOnClickListener { showAppPicker(editTrailerFallback) }
 
         btnSave.setOnClickListener { saveSettings() }
-        btnSave.setOnKeyListener { _, keyCode, event ->
-            if (event.action == KeyEvent.ACTION_UP && isConfirmKey(keyCode)) {
-                saveSettings()
-                true
-            } else {
-                false
-            }
-        }
 
         editStreamPrimary.requestFocus()
     }
