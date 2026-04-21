@@ -264,6 +264,7 @@ class MainActivity : AppCompatActivity() {
 
         selectedStreamPackage = streamPackageCandidates
             .firstOrNull { isPackageInstalled(it) }
+            ?: streamPackageCandidates.firstOrNull()
             ?: PLAYER_VLC
 
         trailerPackageCandidates = listOf(trailerPrimary, trailerFallback, YT_SMARTTUBE, YT_OFFICIAL)
@@ -272,17 +273,17 @@ class MainActivity : AppCompatActivity() {
 
         selectedTrailerPackage = trailerPackageCandidates
             .firstOrNull { isPackageInstalled(it) }
+            ?: trailerPackageCandidates.firstOrNull()
             ?: YT_OFFICIAL
 
         selectedPlayerIsVlc = selectedStreamPackage == PLAYER_VLC
     }
 
     private fun resolveFirstTrailerPackage(youtubeUrl: String): String? {
+        val youtubeUri = Uri.parse(youtubeUrl)
         return trailerPackageCandidates.firstOrNull { packageName ->
-            isPackageInstalled(packageName) &&
-                Intent(Intent.ACTION_VIEW, Uri.parse(youtubeUrl))
-                    .setPackage(packageName)
-                    .resolveActivity(packageManager) != null
+            val intent = Intent(Intent.ACTION_VIEW, youtubeUri).setPackage(packageName)
+            isPackageInstalled(packageName) && intent.resolveActivity(packageManager) != null
         }
     }
 
@@ -313,12 +314,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateSelectedStreamPackage(packageName: String) {
         if (selectedStreamPackage == packageName) return
-        if (streamReceiverRegistered) {
+        val wasRegistered = streamReceiverRegistered
+        if (wasRegistered) {
             unregisterStreamReceiver()
         }
         selectedStreamPackage = packageName
         selectedPlayerIsVlc = packageName == PLAYER_VLC
-        registerStreamReceiver()
+        if (wasRegistered) {
+            registerStreamReceiver()
+        }
     }
 
     /**

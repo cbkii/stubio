@@ -62,7 +62,7 @@ class SetupActivity : AppCompatActivity() {
 
         btnSave.setOnClickListener { saveSettings() }
         btnSave.setOnKeyListener { _, keyCode, event ->
-            if (event.action == KeyEvent.ACTION_DOWN && isConfirmKey(keyCode)) {
+            if (event.action == KeyEvent.ACTION_UP && isConfirmKey(keyCode)) {
                 saveSettings()
                 true
             } else {
@@ -109,18 +109,22 @@ class SetupActivity : AppCompatActivity() {
             .setSingleChoiceItems(labels, selectedIndex) { _, which ->
                 selectedIndex = which
             }
-            .setPositiveButton(R.string.app_picker_ok) { _, _ ->
-                if (committed) return@setPositiveButton
-                committed = true
-                if (selectedIndex in apps.indices) {
-                    selectAppPackage(targetField, apps[selectedIndex].packageName)
-                }
-            }
+            .setPositiveButton(R.string.app_picker_ok, null)
             .setNegativeButton(R.string.app_picker_close, null)
             .create()
 
         dialog.setOnShowListener {
             val listView = dialog.listView ?: return@setOnShowListener
+            val okButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            okButton.setOnClickListener {
+                if (committed) return@setOnClickListener
+                committed = true
+                if (selectedIndex in apps.indices) {
+                    selectAppPackage(targetField, apps[selectedIndex].packageName)
+                }
+                dialog.dismiss()
+            }
+
             listView.choiceMode = ListView.CHOICE_MODE_SINGLE
             listView.setItemChecked(selectedIndex, true)
             listView.setSelection(selectedIndex)
@@ -145,10 +149,13 @@ class SetupActivity : AppCompatActivity() {
             }
 
             listView.setOnKeyListener { _, keyCode, event ->
-                if (event.action == KeyEvent.ACTION_UP && isConfirmKey(keyCode)) {
-                    dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.performClick() ?: false
-                } else {
+                if (event.action != KeyEvent.ACTION_UP || !isConfirmKey(keyCode)) {
                     false
+                } else if (committed) {
+                    true
+                } else {
+                    val positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                    positiveButton?.performClick() ?: false
                 }
             }
 
