@@ -1,112 +1,63 @@
-# Stubio (Android TV)
+# Stubio for Android TV
 
-Stubio routes incoming Stremio playback intents to user-configured Android TV player apps (for example VLC, MX Player, SmartTube, YouTube).
+Stubio is a small routing app you select once, then it forwards playback to your preferred external players.
 
-## Requirements
+<p align="center">
+  <img src="artwork/launcher/stubio-icon.svg" alt="Stubio app icon" width="160" />
+</p>
 
-- Android TV / Google TV device or emulator running Android 9+ (API 28+)
-- JDK 17
-- Android SDK — platform `android-35`, build-tools `35.0.0`
+In other words: **choose Stubio as the app to open Stremio links**, and Stubio will choose the right player package for:
+- **Streams** (movies/episodes)
+- **Trailers** (YouTube-style links)
 
-## Quick start
+## What Stubio does
 
-```bash
-# Verify toolchain
-./gradlew --version
+- Lets you configure **separate external players** for streams and trailers.
+- Supports **primary + fallback** package for each type.
+- Works with TV remote navigation (D-pad + OK) in setup.
+- Shows installed apps in picker as `App Name (package.name)`.
+- Validates incoming links/hosts before routing.
+- Can report playback position back to Stremio when supported by the external player.
 
-# Debug build
-./gradlew :app:assembleDebug
+## Typical setup flow
 
-# Install to connected ATV device/emulator
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-```
+1. Install Stubio on your Android TV / Google TV device.
+2. Open **Stubio TV Setup**.
+3. Pick stream player packages (primary/fallback).
+4. Pick trailer player packages (primary/fallback).
+5. Save settings.
+6. In Stremio (or other source), choose **Stubio** when asked which app should open the link.
 
-## TV-focused behaviour
+After this, Stubio acts as your single entry point and dispatches to the configured external apps.
 
-- **Leanback-only launcher** — app appears on Android TV home screen; `CATEGORY_LEANBACK_LAUNCHER` is the sole launcher entry point.
-- **D-pad-first setup screen** — deterministic focus movement; D-pad up from the top field wraps to the Save button (circular navigation).
-- **TV player detection** — checks both `CATEGORY_LAUNCHER` and `CATEGORY_LEANBACK_LAUNCHER` so TV-only builds of VLC, SmartTube, etc. are found correctly.
-- **Async app picker** — icon loading runs off the main thread; buttons disable during load to prevent double-tap on slow TV hardware.
-- **10-foot legibility** — 18–40 sp typography, 64 dp D-pad targets, high-contrast purple theme, accent-coloured focus ring.
-- **Configurable URI allowlist extension** — Setup includes an "Additional allowed domains/IPs" field (comma-separated) that extends `MainActivity` host whitelisting beyond built-in localhost/private-network/Stremio domain rules.
+## Configuration fields explained
 
-## Build commands
+- **Primary stream player package**: first choice for regular video streams.
+- **Fallback stream player package**: used if primary is unavailable.
+- **Primary trailer player package**: first choice for trailer/YouTube routing.
+- **Fallback trailer player package**: used if primary trailer app is unavailable.
+- **Additional allowed domains/IPs**: optional extra hosts you trust.
 
-```bash
-# Lint + debug build + unit tests
-./gradlew :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --no-daemon
+## About the “Additional allowed domains/IPs” setting
 
-# Release candidate (unsigned by default)
-./gradlew :app:lintRelease :app:assembleRelease --no-daemon
-```
+Stremio setups can vary (local server, custom domain, reverse proxy, LAN IP, etc).  
+Stubio allows common Stremio hosts by default, but this field is for cases where your stream URL host is custom and gets blocked.
 
-## Signed release build
+Only add hosts you trust. Examples:
+- `media.example.com`
+- `192.168.1.80`
+- `10.0.0.25`
 
-Provide signing secrets via Gradle properties or environment variables:
+## Built-in fallback behavior
 
-| Variable | Description |
-|----------|-------------|
-| `ANDROID_SIGNING_STORE_FILE` | Absolute path to `.keystore` / `.jks` file |
-| `ANDROID_SIGNING_STORE_PASSWORD` | Keystore password |
-| `ANDROID_SIGNING_KEY_ALIAS` | Key alias |
-| `ANDROID_SIGNING_KEY_PASSWORD` | Key password |
+If your saved packages are missing/not launchable, Stubio tries known defaults:
+- Streams: VLC, then MX Player.
+- Trailers: SmartTube, then official YouTube.
 
-```bash
-ANDROID_SIGNING_STORE_FILE=/path/release.keystore \
-ANDROID_SIGNING_STORE_PASSWORD=*** \
-ANDROID_SIGNING_KEY_ALIAS=*** \
-ANDROID_SIGNING_KEY_PASSWORD=*** \
-./gradlew :app:assembleRelease --no-daemon
-```
+## Troubleshooting
 
-## TV runtime validation checklist
+- **Wrong app opens**: re-open setup and confirm package names.
+- **No app in picker**: verify app is installed for the same TV user/profile.
+- **Nothing happens on play**: ensure your stream/trailer URL host is allowed, or add host in “Additional allowed domains/IPs”.
 
-Use a physical Android TV or a Google TV emulator (AVD: Television 1080p, API 28+):
-
-1. **Launch** — app icon appears on TV launcher; D-pad centre opens Setup.
-2. **D-pad navigation** — navigate every field and button with D-pad only; confirm visible focus highlight.
-3. **Circular navigation** — D-pad up from the first field wraps focus to the Save button.
-4. **App picker** — open picker; confirm grid is focusable, scrollable, items selectable with D-pad centre.
-5. **Save and relaunch** — save settings, kill the app, relaunch; confirm saved values persist.
-6. **Intent routing** — send a Stremio stream intent and verify the configured player opens.
-7. **Back/Home** — press Back from the player; confirm Stubio exits with no orphaned activities in recents.
-8. **Empty state** — clear all player fields, save, send an intent; confirm fallback to default packages.
-
-### ADB intent test commands
-
-```bash
-# Open setup directly
-adb shell am start -n com.intentrouter.stubio/.SetupActivity
-
-# Simulate a stream intent
-adb shell am start \
-  -a android.intent.action.VIEW \
-  -d "http://127.0.0.1:11470/stream/test.mkv" \
-  -t "video/*" \
-  com.intentrouter.stubio/.MainActivity
-```
-
-## Architecture overview
-
-| Component | Role |
-|-----------|------|
-| `SetupActivity` | Full-screen TV setup UI — configures player packages via SharedPreferences |
-| `MainActivity` | Transparent routing activity — validates URI and launches the right player |
-| `StubioApp` | Application class — forces dark mode for consistent TV rendering |
-
-### Networking and compatibility note
-
-- Stubio does **not** make direct HTTP(S) requests in application code.
-- `android.permission.INTERNET` remains declared intentionally as a compatibility safeguard for routed playback intents where external player apps consume network stream URLs.
-
-## CI
-
-- `.github/workflows/ci.yml` — lint, unit tests, debug + release assembles on every PR and push to `main`; lint reports uploaded as artifacts.
-- `.github/workflows/release.yml` — creates versioned GitHub Releases with a signed (or unsigned-fallback) APK.
-
-## Known limitations
-
-- Launcher icon pack is wired for `android:icon` and adaptive icon layers, but no matching dedicated `ic_launcher_round` raster set was provided in the import. Legacy round mipmaps are kept as a safe pre-API 26 fallback.
-- TV banner is still the existing generated vector drawable (`@drawable/tv_banner`); the imported art set only includes square launcher/store icons, not a 320×180 TV banner source.
-- No Espresso/instrumentation tests — UI testing requires a connected device or emulator.
-- Playback position resume relies on external players returning position via `RESULT_OK`; behaviour varies by player version.
+> ℹ️ NOTE: Stubio does **not** perform direct HTTP(S) network requests in app code. The `INTERNET` permission is intentionally kept as a compatibility contract for routed playback flows where external player apps handle network stream URLs.
