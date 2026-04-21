@@ -7,13 +7,10 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
-import android.view.LayoutInflater
-import android.view.View
-import android.view.ViewGroup
-import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
+import android.widget.ListView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -64,12 +61,19 @@ class SetupActivity : AppCompatActivity() {
         btnPickTrailerFallback.setOnClickListener { showAppPicker(editTrailerFallback) }
 
         btnSave.setOnClickListener { saveSettings() }
+        btnSave.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN && isConfirmKey(keyCode)) {
+                saveSettings()
+                true
+            } else {
+                false
+            }
+        }
 
         editStreamPrimary.requestFocus()
     }
 
     private fun showAppPicker(targetField: EditText) {
-        // Disable all picker buttons while loading to prevent double-tap on slow hardware.
         setPickerButtonsEnabled(false)
 
         lifecycleScope.launch {
@@ -78,8 +82,7 @@ class SetupActivity : AppCompatActivity() {
             }.also { cachedUserInstalledApps = it }
 
             setPickerButtonsEnabled(true)
-
-            if (isFinishing) return@launch
+            if (isFinishing || isDestroyed) return@launch
 
             if (apps.isEmpty()) {
                 Toast.makeText(this@SetupActivity, R.string.no_apps_found, Toast.LENGTH_SHORT).show()
@@ -94,75 +97,69 @@ class SetupActivity : AppCompatActivity() {
         val currentPackageName = targetField.text.toString().trim()
         val initialSelection = apps.indexOfFirst { it.packageName == currentPackageName }
 
-        // Keep each list row in a compact single line so TV focus/selection are unambiguous.
         val labels = apps.map { app ->
             "${app.appName} (${app.packageName})"
         }.toTypedArray()
 
+        var selectedIndex = if (initialSelection >= 0) initialSelection else 0
+        var committed = false
+
         val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.app_picker_title)
-            .setSingleChoiceItems(labels, initialSelection, null)
+            .setSingleChoiceItems(labels, selectedIndex) { _, which ->
+                selectedIndex = which
+            }
+            .setPositiveButton(R.string.app_picker_ok) { _, _ ->
+                if (committed) return@setPositiveButton
+                committed = true
+                if (selectedIndex in apps.indices) {
+                    selectAppPackage(targetField, apps[selectedIndex].packageName)
+                }
+            }
             .setNegativeButton(R.string.app_picker_close, null)
             .create()
 
-        dialog.show()
-        dialog.listView?.post {
-            dialog.listView?.let { listView ->
-                listView.choiceMode = android.widget.ListView.CHOICE_MODE_SINGLE
+        dialog.setOnShowListener {
+            val listView = dialog.listView ?: return@setOnShowListener
+            listView.choiceMode = ListView.CHOICE_MODE_SINGLE
+            listView.setItemChecked(selectedIndex, true)
+            listView.setSelection(selectedIndex)
 
-                val commitSelection: (Int) -> Unit = { selectedIndex ->
-                    if (selectedIndex in apps.indices) {
-                        selectAppPackage(targetField, apps[selectedIndex].packageName)
-                        dialog.dismiss()
-                    }
+            listView.setOnItemSelectedListener(object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(
+                    parent: android.widget.AdapterView<*>?,
+                    view: android.view.View?,
+                    position: Int,
+                    id: Long
+                ) {
+                    selectedIndex = position
+                    listView.setItemChecked(position, true)
                 }
 
-                listView.setOnItemClickListener { _, _, position, _ ->
-                    commitSelection(position)
-                }
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            })
 
-                listView.setOnItemSelectedListener(object : android.widget.AdapterView.OnItemSelectedListener {
-                    override fun onItemSelected(
-                        parent: android.widget.AdapterView<*>?,
-                        view: android.view.View?,
-                        position: Int,
-                        id: Long
-                    ) {
-                        listView.setItemChecked(position, true)
-                    }
+            listView.setOnItemClickListener { _, _, position, _ ->
+                selectedIndex = position
+                listView.setItemChecked(position, true)
+            }
 
-                    override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
-                })
-
-                // Explicitly handle TV remote OK/Enter keys against currently selected row.
-                // Handle on ACTION_UP so the selection state has already settled after DPAD navigation.
-                listView.setOnKeyListener { _, keyCode, event ->
-                    if (event.action == KeyEvent.ACTION_UP &&
-                        (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)
-                    ) {
-                        val selectedIndex = listView.checkedItemPosition.takeIf { it >= 0 }
-                            ?: listView.selectedItemPosition
-                        if (selectedIndex >= 0) {
-                            commitSelection(selectedIndex)
-                            true
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    }
-                }
-
-                listView.requestFocus()
-                if (initialSelection >= 0) {
-                    listView.setItemChecked(initialSelection, true)
-                    listView.setSelection(initialSelection)
+            listView.setOnKeyListener { _, keyCode, event ->
+                if (event.action == KeyEvent.ACTION_UP && isConfirmKey(keyCode)) {
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.performClick() ?: false
                 } else {
-                    listView.setItemChecked(0, true)
-                    listView.setSelection(0)
+                    false
                 }
             }
+
+            listView.requestFocus()
         }
+
+        dialog.setOnDismissListener {
+            targetField.requestFocus()
+        }
+
+        dialog.show()
     }
 
     private fun selectAppPackage(targetField: EditText, packageName: String) {
@@ -181,8 +178,6 @@ class SetupActivity : AppCompatActivity() {
     private fun loadUserInstalledApps(): List<InstalledApp> {
         val pm = packageManager
 
-        // Include all user-installed apps, not only those exposing launcher activities.
-        // This supports TV/mobile/other app types consistently in setup.
         return queryInstalledApplications(pm)
             .asSequence()
             .filter { shouldIncludeAppInPicker(pm, it) }
@@ -230,6 +225,13 @@ class SetupActivity : AppCompatActivity() {
         Toast.makeText(this, R.string.saved_confirmation, Toast.LENGTH_SHORT).show()
     }
 
+    private fun isConfirmKey(keyCode: Int): Boolean {
+        return keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+            keyCode == KeyEvent.KEYCODE_ENTER ||
+            keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER ||
+            keyCode == KeyEvent.KEYCODE_BUTTON_A
+    }
+
     companion object {
         const val PREFS_NAME = "StubioPrefs"
         const val KEY_STREAM_PRIMARY = "stream_player_primary"
@@ -274,33 +276,6 @@ private fun handlesVideoIntent(pm: PackageManager, packageName: String): Boolean
     val videoIntent = Intent(Intent.ACTION_VIEW).apply {
         setDataAndType(Uri.parse("http://127.0.0.1/stubio-test.mp4"), "video/*")
         setPackage(packageName)
-private class LaunchableAppsAdapter(
-    private val inflater: LayoutInflater,
-    private val apps: List<LaunchableApp>,
-    private val onItemClick: (Int) -> Unit
-) : BaseAdapter() {
-
-    override fun getCount(): Int = apps.size
-    override fun getItem(position: Int): LaunchableApp = apps[position]
-    override fun getItemId(position: Int): Long = position.toLong()
-
-    override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-        val view: View
-        val holder: ViewHolder
-        if (convertView == null) {
-            view = inflater.inflate(R.layout.item_app_tile, parent, false)
-            holder = ViewHolder(view)
-            view.tag = holder
-        } else {
-            view = convertView
-            holder = view.tag as ViewHolder
-        }
-        val app = getItem(position)
-        holder.icon.setImageDrawable(app.icon)
-        holder.name.text = app.appName
-        view.contentDescription = "${app.appName}, ${app.packageName}"
-        view.setOnClickListener { onItemClick(position) }
-        return view
     }
     return videoIntent.resolveActivity(pm) != null
 }
