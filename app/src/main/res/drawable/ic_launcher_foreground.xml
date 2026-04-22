@@ -22,7 +22,7 @@
     <!-- YouTube player dot -->
     <path
         android:fillColor="@color/stubio_logo_red"
-        android:pathData="@string/stubio_logo_path_record_dot" />
+        android:pathData="@string/stubio_logo_path_yt_dot" />
 
     <!-- Play symbol -->
     <path
@@ -32,6 +32,6 @@
     <!-- Video player dot -->
     <path
         android:fillColor="@color/stubio_logo_yellow"
-        android:pathData="@string/stubio_logo_path_status_dot" />
+        android:pathData="@string/stubio_logo_path_vid_dot" />
 
 </vector>
