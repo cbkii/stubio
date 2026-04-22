@@ -9,4 +9,13 @@
     <color name="text_primary">#FFFFFF</color>
     <color name="text_secondary">#E1BEE7</color>
     <color name="text_hint">#9575CD</color>
+
+    <!-- Launcher and TV banner palette -->
+    <color name="stubio_logo_lilac">#9D56BC</color>
+    <color name="stubio_logo_blue">#3D4793</color>
+    <color name="stubio_logo_red">#C82E48</color>
+    <color name="stubio_logo_white">#FFFFFF</color>
+    <color name="stubio_logo_yellow">#FCBC2F</color>
+    <color name="stubio_banner_background">#0B0B0B</color>
+    <color name="stubio_banner_text">#F6F6F6</color>
 </resources>
