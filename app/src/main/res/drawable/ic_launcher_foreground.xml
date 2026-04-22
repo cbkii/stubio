@@ -9,24 +9,29 @@
     android:viewportWidth="787"
     android:viewportHeight="787">
 
+    <!-- Top triangle shell -->
     <path
-        android:fillColor="#9D56BC"
-        android:pathData="M390,27 L20,394 L760,394 Z" />
+        android:fillColor="@color/stubio_logo_lilac"
+        android:pathData="@string/stubio_logo_path_top_triangle" />
 
+    <!-- Bottom triangle shell -->
     <path
-        android:fillColor="#3D4793"
-        android:pathData="M20,394 L390,764 L760,394 Z" />
+        android:fillColor="@color/stubio_logo_blue"
+        android:pathData="@string/stubio_logo_path_bottom_triangle" />
 
+    <!-- YouTube player dot -->
     <path
-        android:fillColor="#C82E48"
-        android:pathData="M335.5,194.5 A55,55 0 1,0 445.5,194.5 A55,55 0 1,0 335.5,194.5 Z" />
+        android:fillColor="@color/stubio_logo_red"
+        android:pathData="@string/stubio_logo_path_yt_dot" />
 
+    <!-- Play symbol -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M313,255 L534,396 L313,542 Z" />
+        android:fillColor="@color/stubio_logo_white"
+        android:pathData="@string/stubio_logo_path_play_button" />
 
+    <!-- Video player dot -->
     <path
-        android:fillColor="#FCBC2F"
-        android:pathData="M336,598 A53.5,53.5 0 1,0 443,598 A53.5,53.5 0 1,0 336,598 Z" />
+        android:fillColor="@color/stubio_logo_yellow"
+        android:pathData="@string/stubio_logo_path_vid_dot" />
 
 </vector>
