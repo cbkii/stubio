@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
+import android.util.Log
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
@@ -236,6 +237,7 @@ class SetupActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val TAG = "StubioSetup"
         const val PREFS_NAME = "StubioPrefs"
         const val KEY_STREAM_PRIMARY = "stream_player_primary"
         const val KEY_STREAM_FALLBACK = "stream_player_fallback"
@@ -292,7 +294,8 @@ private fun getPackagesHandlingVideo(pm: PackageManager): Set<String> {
             @Suppress("DEPRECATION")
             pm.queryIntentActivities(videoIntent, PackageManager.MATCH_DEFAULT_ONLY).map { it.activityInfo.packageName }.toSet()
         }
-    } catch (e: Exception) {
+    } catch (e: RuntimeException) {
+        Log.w("StubioSetup", "Failed to query apps handling video intents", e)
         emptySet()
     }
 }
@@ -307,7 +310,8 @@ private fun getPackagesHandlingYoutube(pm: PackageManager): Set<String> {
             @Suppress("DEPRECATION")
             pm.queryIntentActivities(youtubeIntent, PackageManager.MATCH_DEFAULT_ONLY).map { it.activityInfo.packageName }.toSet()
         }
-    } catch (e: Exception) {
+    } catch (e: RuntimeException) {
+        Log.w("StubioSetup", "Failed to query apps handling YouTube intents", e)
         emptySet()
     }
 }

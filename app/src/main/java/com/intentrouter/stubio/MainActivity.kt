@@ -266,7 +266,7 @@ class MainActivity : AppCompatActivity() {
             val duration = if (isVlcResult) intent.getLongExtra(AppConstants.INTENT_EXTRA_VLC_DURATION, -1L) else intent.getLongExtra(AppConstants.INTENT_EXTRA_DURATION, -1L)
 
             if (position >= 0 && duration > 0) {
-                context.getSharedPreferences(SetupActivity.PREFS_NAME, MODE_PRIVATE)
+                context.getSharedPreferences(SetupActivity.PREFS_NAME, Context.MODE_PRIVATE)
                     .edit()
                     .putLong("receiver_last_position", position)
                     .putLong("receiver_last_duration", duration)
