@@ -12,9 +12,9 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:paddingStart="48dp"
-        android:paddingTop="28dp"
+        android:paddingTop="20dp"
         android:paddingEnd="48dp"
-        android:paddingBottom="28dp">
+        android:paddingBottom="20dp">
 
         <!-- Header -->
         <LinearLayout
@@ -43,7 +43,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:layout_marginBottom="20dp"
+            android:layout_marginBottom="12dp"
             android:maxWidth="900dp"
             android:text="@string/setup_subtitle"
             android:textColor="@color/text_secondary"
@@ -76,7 +76,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:layout_marginBottom="12dp"
+                    android:layout_marginBottom="8dp"
                     android:text="@string/info_streams"
                     android:textColor="@color/text_hint"
                     android:textSize="14sp" />
@@ -112,7 +112,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:layout_marginBottom="12dp"
+                    android:layout_marginBottom="8dp"
                     android:text="@string/info_trailers"
                     android:textColor="@color/text_hint"
                     android:textSize="14sp" />
@@ -136,7 +136,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:layout_marginBottom="8dp"
+            android:layout_marginBottom="4dp"
             android:maxWidth="900dp"
             android:text="@string/info_additional_allowed_hosts"
             android:textColor="@color/text_hint"
@@ -145,7 +145,7 @@
         <EditText
             android:id="@+id/editAdditionalAllowedHosts"
             android:layout_width="match_parent"
-            android:layout_height="64dp"
+            android:layout_height="48dp"
             android:background="@drawable/edit_text_bg"
             android:hint="@string/hint_additional_allowed_hosts"
             android:importantForAutofill="no"
@@ -164,8 +164,8 @@
         <Button
             android:id="@+id/btnSave"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:layout_marginTop="20dp"
+            android:layout_height="48dp"
+            android:layout_marginTop="16dp"
             android:background="@drawable/btn_save_bg"
             android:focusable="true"
             android:nextFocusDown="@id/btnPickStreamPrimary"
