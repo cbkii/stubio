@@ -19,11 +19,6 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "Stubio"
 
-        private const val YT_SMARTTUBE = "com.teamsmart.videomanager.tv"
-        private const val YT_OFFICIAL = "com.google.android.youtube"
-        private const val PLAYER_VLC = "org.videolan.vlc"
-        private const val PLAYER_MX = "com.mxtech.videoplayer.ad"
-
         private const val PREF_LAST_STREAM = "last_playback_stream"
         private const val PREF_LAST_POSITION = "last_playback_position"
         private const val PREF_LAST_DURATION = "last_playback_duration"
@@ -99,11 +94,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private var selectedTrailerPackage: String = YT_OFFICIAL
-    private var selectedStreamPackage: String = PLAYER_VLC
+    private var selectedTrailerPackage: String = AppConstants.YT_OFFICIAL
+    private var selectedStreamPackage: String = AppConstants.PLAYER_VLC
     private var selectedPlayerIsVlc: Boolean = true
-    private var streamPackageCandidates: List<String> = listOf(PLAYER_VLC, PLAYER_MX)
-    private var trailerPackageCandidates: List<String> = listOf(YT_SMARTTUBE, YT_OFFICIAL)
+    private var streamPackageCandidates: List<String> = listOf(AppConstants.PLAYER_VLC, AppConstants.PLAYER_MX)
+    private var trailerPackageCandidates: List<String> = listOf(AppConstants.YT_SMARTTUBE, AppConstants.YT_OFFICIAL)
 
     private var lastKnownPosition: Long = 0L
     private var lastKnownDuration: Long = 0L
@@ -238,8 +233,8 @@ class MainActivity : AppCompatActivity() {
     private fun handleExternalPlayerResult(resultCode: Int, data: Intent?) {
         if (resultCode == Activity.RESULT_OK || resultCode == Activity.RESULT_CANCELED) {
             data?.extras?.let { extras ->
-                val position = if (selectedPlayerIsVlc) extras.getLong("extra_position", -1L) else extras.getLong("position", -1L)
-                val duration = if (selectedPlayerIsVlc) extras.getLong("extra_duration", -1L) else extras.getLong("duration", -1L)
+                val position = if (selectedPlayerIsVlc) extras.getLong(AppConstants.INTENT_EXTRA_VLC_POSITION, -1L) else extras.getLong(AppConstants.INTENT_EXTRA_POSITION, -1L)
+                val duration = if (selectedPlayerIsVlc) extras.getLong(AppConstants.INTENT_EXTRA_VLC_DURATION, -1L) else extras.getLong(AppConstants.INTENT_EXTRA_DURATION, -1L)
                 if (position >= 0 && duration > 0) {
                     updatePlaybackPosition(position, duration)
                 }
@@ -261,22 +256,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     class StreamResultReceiver : BroadcastReceiver() {
-        companion object {
-            var lastKnownPosition: Long = 0L
-            var lastKnownDuration: Long = 0L
-        }
 
         override fun onReceive(context: Context, intent: Intent) {
             val isVlcResult = intent.action?.endsWith("player.result") == true
             val isMxResult = intent.action?.endsWith("mxplayer.result") == true
             if (!isVlcResult && !isMxResult) return
 
-            val position = if (isVlcResult) intent.getLongExtra("extra_position", -1L) else intent.getLongExtra("position", -1L)
-            val duration = if (isVlcResult) intent.getLongExtra("extra_duration", -1L) else intent.getLongExtra("duration", -1L)
+            val position = if (isVlcResult) intent.getLongExtra(AppConstants.INTENT_EXTRA_VLC_POSITION, -1L) else intent.getLongExtra(AppConstants.INTENT_EXTRA_POSITION, -1L)
+            val duration = if (isVlcResult) intent.getLongExtra(AppConstants.INTENT_EXTRA_VLC_DURATION, -1L) else intent.getLongExtra(AppConstants.INTENT_EXTRA_DURATION, -1L)
 
             if (position >= 0 && duration > 0) {
-                lastKnownPosition = position
-                lastKnownDuration = duration
+                context.getSharedPreferences(SetupActivity.PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit()
+                    .putLong("receiver_last_position", position)
+                    .putLong("receiver_last_duration", duration)
+                    .apply()
             }
         }
     }
@@ -309,25 +303,25 @@ class MainActivity : AppCompatActivity() {
         val trailerPrimary = sp.getString(SetupActivity.KEY_TRAILER_PRIMARY, "")?.trim().orEmpty()
         val trailerFallback = sp.getString(SetupActivity.KEY_TRAILER_FALLBACK, "")?.trim().orEmpty()
 
-        streamPackageCandidates = listOf(streamPrimary, streamFallback, PLAYER_VLC, PLAYER_MX)
+        streamPackageCandidates = listOf(streamPrimary, streamFallback, AppConstants.PLAYER_VLC, AppConstants.PLAYER_MX)
             .filter { it.isNotBlank() }
             .distinct()
 
         selectedStreamPackage = streamPackageCandidates
             .firstOrNull { isPackageInstalled(it) }
             ?: streamPackageCandidates.firstOrNull()
-            ?: PLAYER_VLC
+            ?: AppConstants.PLAYER_VLC
 
-        trailerPackageCandidates = listOf(trailerPrimary, trailerFallback, YT_SMARTTUBE, YT_OFFICIAL)
+        trailerPackageCandidates = listOf(trailerPrimary, trailerFallback, AppConstants.YT_SMARTTUBE, AppConstants.YT_OFFICIAL)
             .filter { it.isNotBlank() }
             .distinct()
 
         selectedTrailerPackage = trailerPackageCandidates
             .firstOrNull { isPackageInstalled(it) }
             ?: trailerPackageCandidates.firstOrNull()
-            ?: YT_OFFICIAL
+            ?: AppConstants.YT_OFFICIAL
 
-        selectedPlayerIsVlc = selectedStreamPackage == PLAYER_VLC
+        selectedPlayerIsVlc = selectedStreamPackage == AppConstants.PLAYER_VLC
     }
 
     private fun resolveFirstTrailerPackage(youtubeUrl: String): String? {
@@ -388,7 +382,7 @@ class MainActivity : AppCompatActivity() {
         launchFlags: Int,
         useVideoMimeType: Boolean
     ): Intent {
-        val packageIsVlc = packageName == PLAYER_VLC
+        val packageIsVlc = packageName == AppConstants.PLAYER_VLC
         return Intent(Intent.ACTION_VIEW).apply {
             if (useVideoMimeType) {
                 setDataAndType(streamUri, "video/*")
@@ -398,13 +392,13 @@ class MainActivity : AppCompatActivity() {
             setPackage(packageName)
             putExtras(extras)
             if (packageIsVlc) {
-                putExtra("extra_position", lastKnownPosition)
-                putExtra("extra_duration", lastKnownDuration)
+                putExtra(AppConstants.INTENT_EXTRA_VLC_POSITION, lastKnownPosition)
+                putExtra(AppConstants.INTENT_EXTRA_VLC_DURATION, lastKnownDuration)
             } else {
-                putExtra("position", lastKnownPosition)
-                putExtra("duration", lastKnownDuration)
+                putExtra(AppConstants.INTENT_EXTRA_POSITION, lastKnownPosition)
+                putExtra(AppConstants.INTENT_EXTRA_DURATION, lastKnownDuration)
             }
-            putExtra("return_result", true)
+            putExtra(AppConstants.INTENT_EXTRA_RETURN_RESULT, true)
             addFlags(launchFlags or Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
     }
@@ -416,7 +410,7 @@ class MainActivity : AppCompatActivity() {
             unregisterStreamReceiver()
         }
         selectedStreamPackage = packageName
-        selectedPlayerIsVlc = packageName == PLAYER_VLC
+        selectedPlayerIsVlc = packageName == AppConstants.PLAYER_VLC
         if (wasRegistered) {
             registerStreamReceiver()
         }
@@ -445,8 +439,12 @@ class MainActivity : AppCompatActivity() {
     private fun restoreCachedPlaybackData() {
         val sp = getSharedPreferences(SetupActivity.PREFS_NAME, MODE_PRIVATE)
         currentStreamUrl = sp.getString(PREF_LAST_STREAM, null)
-        lastKnownPosition = maxOf(sp.getLong(PREF_LAST_POSITION, 0L), StreamResultReceiver.lastKnownPosition)
-        lastKnownDuration = maxOf(sp.getLong(PREF_LAST_DURATION, 0L), StreamResultReceiver.lastKnownDuration)
+
+        val receiverPosition = sp.getLong("receiver_last_position", 0L)
+        val receiverDuration = sp.getLong("receiver_last_duration", 0L)
+
+        lastKnownPosition = maxOf(sp.getLong(PREF_LAST_POSITION, 0L), receiverPosition)
+        lastKnownDuration = maxOf(sp.getLong(PREF_LAST_DURATION, 0L), receiverDuration)
     }
 
     private fun storeCachedPlaybackData() {
@@ -467,16 +465,14 @@ class MainActivity : AppCompatActivity() {
         lastKnownPosition = 0L
         lastKnownDuration = 0L
         currentStreamUrl = null
-        // Also reset the broadcast-receiver statics so a stale value from a previous
-        // session is never merged back in on the next restoreCachedPlaybackData() call.
-        StreamResultReceiver.lastKnownPosition = 0L
-        StreamResultReceiver.lastKnownDuration = 0L
 
         getSharedPreferences(SetupActivity.PREFS_NAME, MODE_PRIVATE)
             .edit()
             .remove(PREF_LAST_STREAM)
             .remove(PREF_LAST_POSITION)
             .remove(PREF_LAST_DURATION)
+            .remove("receiver_last_position")
+            .remove("receiver_last_duration")
             .apply()
     }
 

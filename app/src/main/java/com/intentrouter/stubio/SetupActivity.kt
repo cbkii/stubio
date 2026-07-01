@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
+import android.util.Log
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
@@ -177,9 +178,13 @@ class SetupActivity : AppCompatActivity() {
     private fun loadUserInstalledApps(): List<InstalledApp> {
         val pm = packageManager
 
+        // Pre-query components to avoid resolveActivity per package
+        val videoApps = getPackagesHandlingVideo(pm)
+        val youtubeApps = getPackagesHandlingYoutube(pm)
+
         return queryInstalledApplications(pm)
             .asSequence()
-            .filter { shouldIncludeAppInPicker(pm, it) }
+            .filter { shouldIncludeAppInPicker(pm, it, videoApps, youtubeApps) }
             .map {
                 InstalledApp(
                     appName = it.loadLabel(pm)?.toString().orEmpty().ifBlank { it.packageName },
@@ -232,6 +237,7 @@ class SetupActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val TAG = "StubioSetup"
         const val PREFS_NAME = "StubioPrefs"
         const val KEY_STREAM_PRIMARY = "stream_player_primary"
         const val KEY_STREAM_FALLBACK = "stream_player_fallback"
@@ -258,12 +264,17 @@ private fun isUserInstalledApp(appInfo: ApplicationInfo): Boolean {
     return !isSystemApp || isUpdatedSystemApp
 }
 
-private fun shouldIncludeAppInPicker(pm: PackageManager, appInfo: ApplicationInfo): Boolean {
+private fun shouldIncludeAppInPicker(
+    pm: PackageManager,
+    appInfo: ApplicationInfo,
+    videoApps: Set<String>,
+    youtubeApps: Set<String>
+): Boolean {
     if (isUserInstalledApp(appInfo)) return true
     val packageName = appInfo.packageName
     return hasLauncherEntryPoint(pm, packageName) ||
-        handlesVideoIntent(pm, packageName) ||
-        handlesYoutubeIntent(pm, packageName)
+        packageName in videoApps ||
+        packageName in youtubeApps
 }
 
 private fun hasLauncherEntryPoint(pm: PackageManager, packageName: String): Boolean {
@@ -271,19 +282,38 @@ private fun hasLauncherEntryPoint(pm: PackageManager, packageName: String): Bool
         pm.getLeanbackLaunchIntentForPackage(packageName) != null
 }
 
-private fun handlesVideoIntent(pm: PackageManager, packageName: String): Boolean {
+private fun getPackagesHandlingVideo(pm: PackageManager): Set<String> {
     val videoIntent = Intent(Intent.ACTION_VIEW).apply {
         setDataAndType(Uri.parse("http://127.0.0.1/stubio-test.mp4"), "video/*")
-        setPackage(packageName)
     }
-    return videoIntent.resolveActivity(pm) != null
+    return try {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            val flags = PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong())
+            pm.queryIntentActivities(videoIntent, flags).map { it.activityInfo.packageName }.toSet()
+        } else {
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(videoIntent, PackageManager.MATCH_DEFAULT_ONLY).map { it.activityInfo.packageName }.toSet()
+        }
+    } catch (e: RuntimeException) {
+        Log.w("StubioSetup", "Failed to query apps handling video intents", e)
+        emptySet()
+    }
 }
 
-private fun handlesYoutubeIntent(pm: PackageManager, packageName: String): Boolean {
-    val youtubeIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=dQw4w9WgXcQ")).apply {
-        setPackage(packageName)
+private fun getPackagesHandlingYoutube(pm: PackageManager): Set<String> {
+    val youtubeIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
+    return try {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            val flags = PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong())
+            pm.queryIntentActivities(youtubeIntent, flags).map { it.activityInfo.packageName }.toSet()
+        } else {
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(youtubeIntent, PackageManager.MATCH_DEFAULT_ONLY).map { it.activityInfo.packageName }.toSet()
+        }
+    } catch (e: RuntimeException) {
+        Log.w("StubioSetup", "Failed to query apps handling YouTube intents", e)
+        emptySet()
     }
-    return youtubeIntent.resolveActivity(pm) != null
 }
 
 private data class InstalledApp(
