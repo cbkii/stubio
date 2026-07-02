@@ -116,6 +116,8 @@ jobs:
 
       - name: Resolve release tag/version
         id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -124,85 +126,179 @@ jobs:
 
           git fetch --force --tags origin
 
-          semver_to_parts() {
+          is_semver_tag() {
             local tag="$1"
-            if [[ "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-              echo "${BASH_REMATCH[1]} ${BASH_REMATCH[2]} ${BASH_REMATCH[3]}"
+            [[ "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]
+          }
+
+          normalise_semver_tag() {
+            local tag="$1"
+            [[ "$tag" == v* ]] || tag="v$tag"
+            if is_semver_tag "$tag"; then
+              echo "$tag"
               return 0
             fi
             return 1
           }
 
-          bump_patch() {
+          semver_key() {
             local tag="$1"
-            local major minor patch
-            read -r major minor patch < <(semver_to_parts "$tag")
-            echo "v${major}.${minor}.$((patch + 1))"
+            if [[ "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              printf "%05d%05d%05d\n" "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
+            else
+              printf "000000000000000\n"
+            fi
           }
 
-          # Choose a starting candidate.
-          CANDIDATE_TAG=""
-          TAG_NOTE="Auto-generated next semantic tag."
-          if [ -n "$REQUESTED_TAG" ]; then
-            [[ "$REQUESTED_TAG" == v* ]] || REQUESTED_TAG="v${REQUESTED_TAG}"
-            if semver_to_parts "$REQUESTED_TAG" >/dev/null; then
-              CANDIDATE_TAG="$REQUESTED_TAG"
-              TAG_NOTE="Requested tag accepted."
-            else
-              echo "Requested tag '$REQUESTED_TAG' is not semver; falling back to auto-generated tag."
-              TAG_NOTE="Requested tag was invalid semver; used auto-generated tag."
-            fi
-          fi
-
-          if [ -z "$CANDIDATE_TAG" ]; then
-            EXISTING_TAG=$(git tag --points-at "$TARGET_SHA" --list 'v*' | head -n1)
-            if [ -n "$EXISTING_TAG" ] && semver_to_parts "$EXISTING_TAG" >/dev/null; then
-              CANDIDATE_TAG="$EXISTING_TAG"
-              echo "Reusing existing tag on target commit: ${CANDIDATE_TAG}"
-            else
-              LATEST_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n1)
-              if [ -z "$LATEST_TAG" ]; then
-                CANDIDATE_TAG="v0.0.1"
-              elif semver_to_parts "$LATEST_TAG" >/dev/null; then
-                CANDIDATE_TAG=$(bump_patch "$LATEST_TAG")
-              else
-                echo "Latest tag '${LATEST_TAG}' is non-semver; falling back to v0.0.1"
-                CANDIDATE_TAG="v0.0.1"
+          sort_semver_tags() {
+            local tags=()
+            while read -r line; do
+              if [ -n "$line" ] && is_semver_tag "$line"; then
+                tags+=("$line")
               fi
+            done
+            if [ ${#tags[@]} -eq 0 ]; then
+              return 0
             fi
+            for t in "${tags[@]}"; do
+              echo "$(semver_key "$t") $t"
+            done | sort -r | awk '{print $2}'
+          }
+
+          bump_patch() {
+            local tag="$1"
+            if [[ "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              echo "v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
+            fi
+          }
+
+          get_release_inventory() {
+            gh release list --json tagName,isDraft,isPrerelease,publishedAt --limit 1000 2>/dev/null || echo "[]"
+          }
+
+          # Inventory outputs
+          HIGHEST_PUB=""
+          HIGHEST_DRAFT=""
+          HIGHEST_PRE=""
+          HIGHEST_RAW=""
+          SKIPPED_TAGS=""
+
+          # 1. Releases JSON
+          RELEASES_JSON=$(get_release_inventory)
+
+          # Parse Highest Published
+          PUB_TAGS=$(echo "$RELEASES_JSON" | jq -r '.[] | select(.isDraft == false and .isPrerelease == false) | .tagName')
+          HIGHEST_PUB=$(echo "$PUB_TAGS" | sort_semver_tags | head -n1 || true)
+
+          # Parse Highest Draft
+          DRAFT_TAGS=$(echo "$RELEASES_JSON" | jq -r '.[] | select(.isDraft == true) | .tagName')
+          HIGHEST_DRAFT=$(echo "$DRAFT_TAGS" | sort_semver_tags | head -n1 || true)
+
+          # Parse Highest Prerelease
+          PRE_TAGS=$(echo "$RELEASES_JSON" | jq -r '.[] | select(.isPrerelease == true) | .tagName')
+          HIGHEST_PRE=$(echo "$PRE_TAGS" | sort_semver_tags | head -n1 || true)
+
+          # Track skipped non-semver from releases
+          NON_SEMVER_REL=$(echo "$RELEASES_JSON" | jq -r '.[].tagName' | while read -r t; do
+            if [ -n "$t" ] && ! is_semver_tag "$t"; then echo "$t"; fi
+          done)
+          if [ -n "$NON_SEMVER_REL" ]; then
+            SKIPPED_TAGS="$NON_SEMVER_REL"
           fi
 
-          # Ensure chosen tag is valid for target SHA; if it already exists elsewhere, bump patch until available.
-          ATTEMPTS=0
+          # 2. Git Tags
+          ALL_GIT_TAGS=$(git tag --list 'v*')
+          HIGHEST_RAW=$(echo "$ALL_GIT_TAGS" | sort_semver_tags | head -n1 || true)
+
+          NON_SEMVER_GIT=$(echo "$ALL_GIT_TAGS" | while read -r t; do
+            if [ -n "$t" ] && ! is_semver_tag "$t"; then echo "$t"; fi
+          done)
+          if [ -n "$NON_SEMVER_GIT" ]; then
+            SKIPPED_TAGS=$(echo -e "${SKIPPED_TAGS}\n${NON_SEMVER_GIT}" | sort -u | grep -v '^$')
+          fi
+
+          # Highest Overall
+          HIGHEST_ALL=$(echo -e "${HIGHEST_PUB}\n${HIGHEST_DRAFT}\n${HIGHEST_PRE}\n${HIGHEST_RAW}" | sort_semver_tags | head -n1 || true)
+
+          CANDIDATE_TAG=""
+          TAG_NOTE=""
           BUMP_COUNT=0
-          NEXT_TAG="$CANDIDATE_TAG"
-          while :; do
-            ATTEMPTS=$((ATTEMPTS + 1))
-            if [ "$ATTEMPTS" -gt 200 ]; then
-              echo "Could not find an available tag after 200 attempts starting from ${CANDIDATE_TAG}." >&2
+          TAG_ACTION="new tag"
+
+          if [ -n "$REQUESTED_TAG" ]; then
+            # Explicit Tag Mode
+            NORM_TAG=$(normalise_semver_tag "$REQUESTED_TAG" || true)
+            if [ -z "$NORM_TAG" ]; then
+              echo "ERROR: Requested tag '$REQUESTED_TAG' is invalid semver. Failing in explicit mode." >&2
               exit 1
             fi
 
-            if git show-ref --verify --quiet "refs/tags/${NEXT_TAG}"; then
-              TAG_SHA=$(git rev-list -n1 "${NEXT_TAG}")
+            CANDIDATE_TAG="$NORM_TAG"
+            echo "Explicit tag requested: ${CANDIDATE_TAG}"
+            TAG_NOTE="Requested tag ${CANDIDATE_TAG} accepted."
+
+            if git show-ref --verify --quiet "refs/tags/${CANDIDATE_TAG}"; then
+              TAG_SHA=$(git rev-list -n1 "${CANDIDATE_TAG}")
               if [ "$TAG_SHA" = "$TARGET_SHA" ]; then
-                echo "Tag ${NEXT_TAG} already points at target commit; reusing it."
-                break
+                echo "Tag ${CANDIDATE_TAG} already exists on target commit. Proceeding to update/reuse release."
+                TAG_NOTE="Requested tag ${CANDIDATE_TAG} already exists on target commit. Reusing."
+                TAG_ACTION="existing tag reuse/update"
+              else
+                echo "ERROR: Explicit tag ${CANDIDATE_TAG} exists but points to a different commit (${TAG_SHA} != ${TARGET_SHA}). Failing." >&2
+                exit 1
               fi
-              echo "Tag ${NEXT_TAG} points to ${TAG_SHA}; bumping patch and retrying."
-              NEXT_TAG=$(bump_patch "$NEXT_TAG")
-              BUMP_COUNT=$((BUMP_COUNT + 1))
-              continue
+            fi
+            NEXT_TAG="$CANDIDATE_TAG"
+          else
+            # Auto Tag Mode
+            if [ -z "$HIGHEST_ALL" ]; then
+              NEXT_TAG="v0.0.1"
+              TAG_NOTE="No valid semver tags found in repo. Starting at v0.0.1."
+            else
+              NEXT_TAG=$(bump_patch "$HIGHEST_ALL")
+              TAG_NOTE="Auto-generated next semantic tag based on highest existing version ${HIGHEST_ALL}."
+              TAG_ACTION="auto-bumped new release"
             fi
 
-            break
-          done
+            # Collision retry loop for auto mode
+            ATTEMPTS=0
+            while :; do
+              ATTEMPTS=$((ATTEMPTS + 1))
+              if [ "$ATTEMPTS" -gt 200 ]; then
+                echo "Could not find an available tag after 200 attempts starting from ${NEXT_TAG}." >&2
+                exit 1
+              fi
+
+              if git show-ref --verify --quiet "refs/tags/${NEXT_TAG}"; then
+                echo "Tag ${NEXT_TAG} already exists; bumping patch and retrying."
+                NEXT_TAG=$(bump_patch "$NEXT_TAG")
+                BUMP_COUNT=$((BUMP_COUNT + 1))
+                continue
+              fi
+              break
+            done
+          fi
 
           VERSION_NAME="${NEXT_TAG#v}"
+
+          # Pass outputs to summary & later steps
           echo "tag=${NEXT_TAG}" >> "$GITHUB_OUTPUT"
           echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
           echo "tag_bump_count=${BUMP_COUNT}" >> "$GITHUB_OUTPUT"
           echo "tag_note=${TAG_NOTE}" >> "$GITHUB_OUTPUT"
+          echo "highest_pub=${HIGHEST_PUB:-none}" >> "$GITHUB_OUTPUT"
+          echo "highest_draft=${HIGHEST_DRAFT:-none}" >> "$GITHUB_OUTPUT"
+          echo "highest_pre=${HIGHEST_PRE:-none}" >> "$GITHUB_OUTPUT"
+          echo "highest_raw=${HIGHEST_RAW:-none}" >> "$GITHUB_OUTPUT"
+
+          # Clean SKIPPED_TAGS formatting
+          SKIPPED_FMT=$(echo "$SKIPPED_TAGS" | tr '\n' ',' | sed 's/,$//')
+          echo "skipped_tags=${SKIPPED_FMT:-none}" >> "$GITHUB_OUTPUT"
+
+          NORM_REQ=$(normalise_semver_tag "$REQUESTED_TAG" 2>/dev/null || true)
+          echo "norm_req=${NORM_REQ:-none}" >> "$GITHUB_OUTPUT"
+          echo "tag_action=${TAG_ACTION}" >> "$GITHUB_OUTPUT"
+
           echo "Resolved release tag: ${NEXT_TAG}"
 
       - name: Resolve signing mode
@@ -354,10 +450,12 @@ jobs:
           echo "- ℹ️ Tag strategy: ${{ steps.version.outputs.tag_note }}" >> "${RUNNER_TEMP}/adaptive-report.md"
 
           # Find the most recent active published (non-draft, non-prerelease) release tag
-          # so the changelog compares against the correct base rather than any tag.
-          PREV_TAG=$(gh api "repos/${{ github.repository }}/releases" \
-            --jq '[.[] | select(.draft == false and .prerelease == false)] | .[0].tag_name // empty' \
-            2>/dev/null || true)
+          # that is also a valid semver so the changelog compares against the correct base rather than any tag.
+          PREV_TAG="${{ steps.version.outputs.highest_pub }}"
+          if [ "$PREV_TAG" = "none" ] || [ -z "$PREV_TAG" ]; then
+            PREV_TAG=""
+          fi
+          echo "previous_tag_name=${PREV_TAG:-none}" >> "$GITHUB_OUTPUT"
 
           GENERATED_NOTES=""
           if [ "$TAG" != "(unknown)" ] && [ "$TARGET_SHA" != "(unknown)" ]; then
@@ -383,6 +481,14 @@ jobs:
 
           echo "release_body_path=${RUNNER_TEMP}/release-body.md" >> "$GITHUB_OUTPUT"
 
+      - name: Verify APK exists before release
+        run: |
+          set -euo pipefail
+          if [ ! -f "${APK_PATH}" ]; then
+            echo "ERROR: APK file not found at ${APK_PATH}. Aborting release creation to avoid orphan tags." >&2
+            exit 1
+          fi
+
       - name: Create and push release tag
         run: |
           set -euo pipefail
@@ -403,9 +509,16 @@ jobs:
             exit 0
           fi
 
-          git tag "${TAG}" "${TARGET_SHA}"
-          if ! git push origin "${TAG}"; then
-            echo "Initial tag push failed; re-fetching tags for fallback handling."
+          ATTEMPTS=0
+          MAX_ATTEMPTS=5
+          while :; do
+            ATTEMPTS=$((ATTEMPTS + 1))
+            git tag "${TAG}" "${TARGET_SHA}" || true
+            if git push origin "${TAG}"; then
+              break
+            fi
+
+            echo "Tag push failed for ${TAG}. Attempt ${ATTEMPTS}/${MAX_ATTEMPTS}."
             git fetch --force --tags origin
             if git show-ref --verify --quiet "refs/tags/${TAG}"; then
               TAG_SHA=$(git rev-list -n1 "${TAG}")
@@ -415,15 +528,39 @@ jobs:
               fi
             fi
 
-            echo "ERROR: Could not push tag ${TAG}; please retry run to choose a new auto-bumped tag." >&2
-            exit 1
-          fi
+            if [ "$ATTEMPTS" -ge "$MAX_ATTEMPTS" ]; then
+              echo "ERROR: Could not push tag ${TAG} after ${MAX_ATTEMPTS} attempts; giving up." >&2
+              exit 1
+            fi
+
+            # If explicit mode, do not auto-bump, fail immediately on collision
+            if [ "${{ steps.context.outputs.requested_tag }}" != "" ]; then
+              echo "ERROR: Collision detected during explicit tag mode. Aborting." >&2
+              exit 1
+            fi
+
+            # Auto bump patch and retry loop
+            if [[ "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              TAG="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
+              echo "Bumping to ${TAG} and retrying push..."
+            else
+              echo "ERROR: Current tag ${TAG} is not standard semver; cannot auto-bump." >&2
+              exit 1
+            fi
+          done
+
+          # Since the tag might have changed due to remote collisions, update the output for later steps.
+          # We cannot easily update the GITHUB_OUTPUT of a previous step dynamically here,
+          # so we export it as an env variable that takes precedence or update the current step's output.
+          echo "final_tag=${TAG}" >> "$GITHUB_ENV"
+          # Also write to github output if needed for completeness
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release and attach APK
         id: release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
+          tag_name: ${{ env.final_tag || steps.version.outputs.tag }}
           target_commitish: ${{ steps.context.outputs.target_sha }}
           draft: ${{ steps.context.outputs.draft == 'true' }}
           body_path: ${{ steps.notes.outputs.release_body_path }}
@@ -431,12 +568,43 @@ jobs:
           generate_release_notes: false
           make_latest: ${{ steps.context.outputs.draft != 'true' && 'true' || 'false' }}
           fail_on_unmatched_files: true
+          overwrite_files: true
           files: ${{ env.APK_PATH }}
 
+      - name: Verify release result
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${final_tag:-${{ steps.version.outputs.tag }}}"
+
+          # Check if release exists
+          if ! gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "ERROR: GitHub release for tag ${TAG} could not be verified." >&2
+            exit 1
+          fi
+
+          # Check if APK is attached
+          APK_NAME=$(basename "${APK_PATH}")
+          ASSETS=$(gh release view "${TAG}" --json assets --jq '.assets[].name')
+          if ! echo "$ASSETS" | grep -q "^${APK_NAME}$"; then
+            echo "ERROR: Expected APK asset '${APK_NAME}' is not attached to the release." >&2
+            exit 1
+          fi
+
+          # Check if URL resolves correctly
+          RELEASE_URL=$(gh release view "${TAG}" --json url --jq '.url' || echo "")
+          if [ -z "$RELEASE_URL" ] || echo "$RELEASE_URL" | grep -q 'untagged-'; then
+            echo "WARNING: Release URL could not be perfectly resolved or appears untagged: ${RELEASE_URL}" >&2
+          else
+            echo "Release verified successfully at ${RELEASE_URL}"
+          fi
+
       - name: Upload APK as workflow artifact
+        id: apk_upload
         uses: actions/upload-artifact@v4
         with:
-          name: stubio-${{ steps.version.outputs.tag }}-release
+          name: stubio-${{ env.final_tag || steps.version.outputs.tag }}-release
           path: ${{ env.APK_PATH }}
           retention-days: 30
 
@@ -448,7 +616,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          TAG="${{ steps.version.outputs.tag }}"
+          TAG="${final_tag:-${{ steps.version.outputs.tag }}}"
           TAG="${TAG:-(unknown)}"
           TARGET_SHA="${{ steps.context.outputs.target_sha }}"
           TARGET_SHA="${TARGET_SHA:-(unknown)}"
@@ -506,40 +674,139 @@ jobs:
           fi
 
           {
-            echo "## ✅ Release Workflow Result"
+            echo "## 🚀 Release Workflow Summary"
             echo ""
+            echo "### 1. Overall Status"
+            echo "| Field | Value |"
+            echo "|-------|-------|"
             if [ "${{ job.status }}" = "success" ]; then
-              echo "**Status:** ✅ Success"
+              echo "| **Status** | ✅ Success |"
+            elif [ "${{ job.status }}" = "cancelled" ]; then
+              echo "| **Status** | ⛔ Cancelled |"
             else
-              echo "**Status:** ❌ Failed"
+              echo "| **Status** | ❌ Failed |"
+            fi
+            echo "| **Trigger Source** | \`${SOURCE}\` |"
+            echo "| **Actor** | \`${{ github.actor }}\` |"
+            echo "| **Run Number** | \`${{ github.run_number }}\` (Attempt \`${{ github.run_attempt }}\`) |"
+            echo "| **Branch/Ref** | \`${{ github.ref_name }}\` |"
+            echo "| **Target SHA** | \`${TARGET_SHA}\` (\`${TARGET_SHA:0:7}\`) |"
+            echo "| **Draft Mode** | \`${DRAFT}\` |"
+            echo ""
+
+            echo "### 2. Version Decision"
+            echo "| Category | Value |"
+            echo "|----------|-------|"
+            REQ="${{ steps.context.outputs.requested_tag }}"
+            if [ -z "$REQ" ]; then
+              echo "| **Requested Input** | \`(auto)\` |"
+              echo "| **Normalised Input** | N/A |"
+            else
+              echo "| **Requested Input** | \`${REQ}\` |"
+              echo "| **Normalised Input** | \`${{ steps.version.outputs.norm_req }}\` |"
+            fi
+            echo "| **Highest Published Release** | \`${{ steps.version.outputs.highest_pub }}\` |"
+            echo "| **Highest Draft Release** | \`${{ steps.version.outputs.highest_draft }}\` |"
+            echo "| **Highest Prerelease** | \`${{ steps.version.outputs.highest_pre }}\` |"
+            echo "| **Highest Raw Git Tag** | \`${{ steps.version.outputs.highest_raw }}\` |"
+            echo "| **Final Selected Tag** | \`${TAG}\` |"
+            echo "| **Version Name** | \`${{ steps.version.outputs.version_name }}\` |"
+            echo "| **Version Code** | \`${{ github.run_number }}\` |"
+            echo "| **Action Taken** | \`${{ steps.version.outputs.tag_action }}\` |"
+            echo "| **Skipped Non-Semver Tags** | \`${{ steps.version.outputs.skipped_tags }}\` |"
+
+            echo ""
+            echo "**Decision Explanation:** ${{ steps.version.outputs.tag_note }}"
+            if [ "${{ steps.version.outputs.tag_bump_count }}" != "0" ] && [ -n "${{ steps.version.outputs.tag_bump_count }}" ]; then
+               echo "- ⚠️ **Collision avoidance:** Bumped patch ${{ steps.version.outputs.tag_bump_count }} time(s)."
             fi
             echo ""
-            echo "### 🔑 Key Parameters"
-            echo "- **Tag:** \`${TAG}\`"
-            echo "- **Target SHA:** \`${TARGET_SHA}\`"
-            echo "- **Draft:** \`${DRAFT}\`"
-            echo "- **Trigger source:** \`${SOURCE}\`"
-            echo "- **Signing enabled:** \`${SIGNING_ENABLED}\`"
-            echo "- **APK path:** \`${APK_PATH_VAL}\`"
-            echo ""
-            echo "### 🧩 Adaptive Outcomes"
-            [ -f "${RUNNER_TEMP}/adaptive-report.md" ] && cat "${RUNNER_TEMP}/adaptive-report.md" || echo "_(no adaptive outcomes recorded)_"
-            echo ""
-            echo "### 🔗 Links"
+
+            echo "### 3. Release Result"
+            echo "| Resource | Link/Status |"
+            echo "|----------|-------------|"
             if [ -n "$RELEASE_URL" ] && [ "$RELEASE_URL" != "(unavailable)" ]; then
-              echo "- [🎉 Release page](${RELEASE_URL})"
+              echo "| **Release Page** | [View Release](${RELEASE_URL}) |"
+            else
+              echo "| **Release Page** | _Unavailable_ |"
             fi
             if [ -n "$TAG_URL" ]; then
-              echo "- [🏷️ Tag release page](${TAG_URL})"
+              echo "| **Tag Page** | [View Tag](${TAG_URL}) |"
+              echo "| **Source Tree** | [View Tree](${TAGGED_TREE_URL}) |"
             fi
-            if [ -n "$TAGGED_TREE_URL" ]; then
-              echo "- [📦 Tagged source tree](${TAGGED_TREE_URL})"
+            PREV_TAG="${{ steps.notes.outputs.previous_tag_name }}"
+            if [ -n "$PREV_TAG" ] && [ "$PREV_TAG" != "none" ]; then
+              echo "| **Compare Changes** | [\`${PREV_TAG}...\${TAG}\`]($(_safe_repo_url "${REPO_BASE_URL}/compare/${PREV_TAG}...${TAG}")) |"
+              echo "| **Changelog Base** | \`${PREV_TAG}\` (published) |"
+            fi
+            echo "| **Release Type** | \`Draft: ${DRAFT}\` |"
+            echo "| **Release Commit** | \`${TARGET_SHA:0:7}\` |"
+
+            # Simple assumption since we rename it
+            APK_NAME=$(basename "${APK_PATH_VAL}")
+            if [ -f "${APK_PATH_VAL}" ]; then
+                APK_SIZE=$(ls -lh "${APK_PATH_VAL}" | awk '{print $5}')
+                echo "| **APK Asset** | \`${APK_NAME}\` (${APK_SIZE}) |"
+            else
+                echo "| **APK Asset** | \`${APK_NAME}\` (Size unknown) |"
+            fi
+            echo "| **Asset Replace/Overwrite** | \`true\` |"
+            echo ""
+
+            echo "### 4. Build & Signing Result"
+            echo "| Check | Result |"
+            echo "|-------|--------|"
+            if [ "${SIGNING_ENABLED}" = "true" ]; then
+              echo "| **Signing** | ✅ Enabled |"
+            else
+              echo "| **Signing** | ⚠️ Disabled (Unsigned fallback used due to missing secrets) |"
+            fi
+            echo "| **APK Filename** | \`${APK_NAME}\` |"
+            echo "| **APK Path** | \`${APK_PATH_VAL}\` |"
+
+            if [ -f "${APK_PATH_VAL}" ]; then
+               SHA256=$(sha256sum "${APK_PATH_VAL}" | awk '{print $1}')
+               echo "| **APK SHA-256** | \`${SHA256}\` |"
             fi
             echo ""
-            echo "#### 📋 Reports"
-            if [ -n "$LINT_URL" ] && [ "$LINT_URL" != "(unavailable)" ]; then
-              echo "- [📊 Release lint report](${LINT_URL})"
+
+            APK_ARTIFACT_URL="${{ steps.apk_upload.outputs.artifact-url }}"
+            APK_ARTIFACT_URL="${APK_ARTIFACT_URL:-(unavailable)}"
+            [ "$APK_ARTIFACT_URL" != "(unavailable)" ] && APK_ARTIFACT_URL=$(_safe_repo_url "$APK_ARTIFACT_URL")
+
+            echo "### 5. Workflow Artifacts"
+            echo "| Artifact | Details |"
+            echo "|----------|---------|"
+            echo "| **APK Artifact Name** | \`stubio-${TAG}-release\` |"
+            if [ -n "$APK_ARTIFACT_URL" ] && [ "$APK_ARTIFACT_URL" != "(unavailable)" ]; then
+              echo "| **APK Artifact URL** | [Download APK Artifact](${APK_ARTIFACT_URL}) |"
             else
-              echo "- _(lint report unavailable)_"
+              echo "| **APK Artifact URL** | _Unavailable_ |"
+            fi
+            if [ -n "$LINT_URL" ] && [ "$LINT_URL" != "(unavailable)" ]; then
+              echo "| **Lint Report URL** | [Download Lint Artifact](${LINT_URL}) |"
+            else
+              echo "| **Lint Report URL** | _Unavailable_ |"
+            fi
+            echo "| **Retention** | 30 days |"
+            echo "> _Note: Artifact links require GitHub authentication to access._"
+            echo ""
+
+            if [ "${{ job.status }}" != "success" ]; then
+               echo "### 6. Diagnostics on Failure"
+               echo "| Diagnostic | State |"
+               echo "|------------|-------|"
+               echo "| **Last Resolved Tag** | \`${TAG}\` |"
+
+               TAG_EXISTS=$(git show-ref --verify --quiet "refs/tags/${TAG}" && echo "Yes" || echo "No")
+               echo "| **Tag Created Before Failure** | \`${TAG_EXISTS}\` |"
+
+               REL_EXISTS=$(gh release view "${TAG}" >/dev/null 2>&1 && echo "Yes" || echo "No")
+               echo "| **Release Created Before Failure** | \`${REL_EXISTS}\` |"
+
+               APK_EXISTS=$([ -f "${APK_PATH_VAL}" ] && echo "Yes" || echo "No")
+               echo "| **APK Created Before Failure** | \`${APK_EXISTS}\` |"
+               echo ""
+               echo "**Next Steps:** Please review the failure logs. If this was a tag collision, you may need to delete conflicting tags/drafts manually, or re-trigger the workflow to compute the next safe version."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
