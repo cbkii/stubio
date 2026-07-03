@@ -93,7 +93,5 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
-}
-dependencies {
     testImplementation("org.robolectric:robolectric:4.10.3")
 }

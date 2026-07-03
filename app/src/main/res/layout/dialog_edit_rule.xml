@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/btn_pick_rule_app"
+        android:textColor="@color/text_primary" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="4dp">
+
+        <EditText
+            android:id="@+id/editRuleApp"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minHeight="48dp"
+            android:inputType="text"
+            android:background="@drawable/edit_text_bg"
+            android:paddingHorizontal="8dp" />
+
+        <Button
+            android:id="@+id/btnPickRuleApp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/btn_pick_rule_app"
+            android:textAllCaps="false"
+            android:layout_marginStart="8dp" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/label_rule_pattern"
+        android:textColor="@color/text_primary"
+        android:layout_marginTop="16dp" />
+
+    <EditText
+        android:id="@+id/editRulePattern"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp"
+        android:inputType="textMultiLine"
+        android:background="@drawable/edit_text_bg"
+        android:padding="8dp"
+        android:layout_marginTop="4dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/label_rule_order"
+        android:textColor="@color/text_primary"
+        android:layout_marginTop="16dp" />
+
+    <EditText
+        android:id="@+id/editRuleOrder"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp"
+        android:inputType="number"
+        android:background="@drawable/edit_text_bg"
+        android:paddingHorizontal="8dp"
+        android:layout_marginTop="4dp" />
+
+</LinearLayout>

@@ -68,28 +68,39 @@ Stubio supports defining custom routing rules to send different types of streams
 
 You can configure these rules in the **Advanced Routing** section of the setup screen.
 
-Advanced Routing matches the Android intent data Stubio receives. It can always match URI scheme, host, path, query, and visible file-extension-like text. It can only match Stremio stream name/description/filename when that information is included in the incoming intent or encoded into the URL by the addon/proxy. It evaluates rules in ascending order, launching the first matching package that is installed and can handle the intent.
+Advanced Routing matches the Android intent data Stubio receives. It can always match URI scheme, host, path, query, and visible file-extension-like text. It can only match Stremio stream name/description/filename when that information is included in the incoming intent or encoded into the URL by the addon/proxy.
+
+Stubio cannot guarantee full Stremio stream object metadata is available, nor does it perform actual codec/container probing or network content sniffing.
+
+Rules are evaluated in ascending order, launching the first matching package that is installed and can handle the intent. You can manage each rule directly from the setup screen, including enabling/disabling, editing, and deleting rules via a TV-friendly interface. A `📋 Templates` button provides easy-to-insert boilerplate patterns.
 
 ### Rule Syntax
 ```text
-package.name:pattern:order
+package.name:pattern_mode:pattern:order
 ```
 
-If the pattern is wrapped in forward slashes (e.g. `/pattern/`), it's treated as a Regex. You can make it case-insensitive by appending `i` (e.g. `/pattern/i`). Otherwise, it's treated as a substring match.
+Stubio uses explicit prefixes to determine how the pattern is matched:
+* `contains:` - Matches if the text is a substring (case-insensitive). Best for literal matches (e.g., `contains:/api/`).
+* `regex:` - Evaluates the text as a case-sensitive Regular Expression.
+* `regexi:` - Evaluates the text as a case-insensitive Regular Expression.
+
+For backwards compatibility, patterns wrapped in forward slashes (e.g. `/pattern/i`) are supported as a regex shorthand, but the `regexi:` / `contains:` prefixes are preferred.
+
+For regex syntax assistance, refer to the [Android Pattern Documentation](https://developer.android.com/reference/java/util/regex/Pattern).
 
 ### Examples
 ```text
 # HLS / m3u8 streams to VLC
-org.videolan.vlc:/\.m3u8(\?|$)|\/hls\//i:10
+org.videolan.vlc:regexi:\.m3u8(\?|$)|/hls/:10
 
 # Common direct media URLs to MX Player
-com.mxtech.videoplayer.ad:/\.(mkv|mp4|avi|webm)(\?|$)/i:20
+com.mxtech.videoplayer.ad:regexi:\.(mkv|mp4|avi|webm)(\?|$):20
 
 # Trailer/YouTube-like links to SmartTube
-com.teamsmart.videomanager.tv:/\btrailer\b|youtube\.com|\/yt\//i:30
+com.teamsmart.videomanager.tv:regexi:\btrailer\b|youtube\.com|/yt/:30
 
 # Dolby Vision/HDR terms if encoded into URL/query by addon/proxy
-org.videolan.vlc:/\b(DV|Dolby[ ._-]?Vision|HDR10\+)\b/i:40
+org.videolan.vlc:regexi:\b(DV|Dolby[ ._-]?Vision|HDR10\+)\b:40
 ```
 
 > **Note**: Primary/fallback players remain the default fallback behavior if no advanced routing rules match the incoming stream. Stubio deliberately does not perform direct network requests or probing.

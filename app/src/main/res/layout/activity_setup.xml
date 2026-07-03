@@ -202,24 +202,27 @@
                 android:textColor="@color/text_primary"
                 android:focusable="true"
                 android:nextFocusUp="@id/btnAdvancedRoutingToggle"
-                android:nextFocusDown="@id/editAdvancedRoutingRules" />
+                android:nextFocusDown="@id/btnAddAdvancedRule" />
 
-            <EditText
-                android:id="@+id/editAdvancedRoutingRules"
+            <LinearLayout
+                android:id="@+id/layoutAdvancedRulesList"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:minLines="4"
-                android:maxLines="8"
-                android:gravity="top|start"
-                android:inputType="textMultiLine|textNoSuggestions"
-                android:hint="@string/hint_advanced_routing_rules"
-                android:background="@drawable/edit_text_bg"
-                android:padding="8dp"
+                android:orientation="vertical"
+                android:layout_marginTop="8dp" />
+
+            <Button
+                android:id="@+id/btnAddAdvancedRule"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/btn_add_advanced_rule"
+                android:textAllCaps="false"
+                android:background="@drawable/btn_save_bg"
                 android:textColor="@color/text_primary"
-                android:textColorHint="@color/text_hint"
                 android:layout_marginTop="8dp"
                 android:nextFocusUp="@id/checkAdvancedRoutingEnabled"
-                android:nextFocusDown="@id/btnPickAdvancedRoutingApp" />
+                android:nextFocusDown="@id/btnAddAdvancedRule" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -227,20 +230,24 @@
                 android:orientation="horizontal"
                 android:layout_marginTop="8dp">
 
+
+
                 <Button
-                    android:id="@+id/btnPickAdvancedRoutingApp"
+                    android:id="@+id/btnAdvancedRoutingTemplates"
                     android:layout_width="0dp"
                     android:layout_weight="1"
                     android:layout_height="wrap_content"
                     android:minHeight="48dp"
-                    android:text="@string/btn_pick_advanced_routing_app"
+                    android:text="@string/btn_advanced_routing_templates"
                     android:textAllCaps="false"
                     android:layout_marginEnd="4dp"
+                    android:layout_marginStart="4dp"
                     android:background="@drawable/btn_save_bg"
                     android:textColor="@color/text_primary"
-                    android:nextFocusUp="@id/editAdvancedRoutingRules"
+                    android:nextFocusUp="@id/btnAddAdvancedRule"
                     android:nextFocusDown="@id/btnSave"
-                    android:nextFocusRight="@id/btnValidateAdvancedRouting" />
+                    android:nextFocusRight="@id/btnValidateAdvancedRouting"
+                    android:nextFocusLeft="@id/btnAdvancedRoutingTemplates" />
 
                 <Button
                     android:id="@+id/btnValidateAdvancedRouting"
@@ -253,9 +260,9 @@
                     android:layout_marginStart="4dp"
                     android:background="@drawable/btn_save_bg"
                     android:textColor="@color/text_primary"
-                    android:nextFocusUp="@id/editAdvancedRoutingRules"
+                    android:nextFocusUp="@id/btnAddAdvancedRule"
                     android:nextFocusDown="@id/btnSave"
-                    android:nextFocusLeft="@id/btnPickAdvancedRoutingApp" />
+                    android:nextFocusLeft="@id/btnAdvancedRoutingTemplates" />
             </LinearLayout>
         </LinearLayout>
 

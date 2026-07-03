@@ -59,13 +59,20 @@ data class RoutingContext(
 fun buildRoutingContext(uri: Uri, originalIntent: Intent, isTrailer: Boolean): RoutingContext {
     val rawUrl = uri.toString()
     val decodedUrl = runCatching { Uri.decode(rawUrl) }.getOrElse { rawUrl }
-    val queryName = uri.getQueryParameter("name")
-        ?: uri.getQueryParameter("title")
-    val queryFilename = uri.getQueryParameter("filename")
-        ?: uri.getQueryParameter("file")
-        ?: uri.getQueryParameter("download")
+    val queryName = if (uri.isHierarchical) {
+        uri.getQueryParameter("name") ?: uri.getQueryParameter("title")
+    } else null
 
-    val path = uri.path
+    val queryFilename = if (uri.isHierarchical) {
+        uri.getQueryParameter("filename")
+            ?: uri.getQueryParameter("file")
+            ?: uri.getQueryParameter("download")
+    } else null
+
+    val path = if (uri.isHierarchical) uri.path else null
+    val query = if (uri.isHierarchical) uri.query else null
+    val fragment = if (uri.isHierarchical) uri.fragment else null
+
     val extension = path
         ?.substringAfterLast('/', "")
         ?.substringBefore('?')
@@ -86,8 +93,8 @@ fun buildRoutingContext(uri: Uri, originalIntent: Intent, isTrailer: Boolean): R
         scheme = uri.scheme,
         host = uri.host,
         path = path,
-        query = uri.query,
-        fragment = uri.fragment,
+        query = query,
+        fragment = fragment,
         extension = extension,
         queryName = queryName,
         queryFilename = queryFilename,
@@ -113,13 +120,15 @@ fun AdvancedRoutingRule.matches(context: RoutingContext): Boolean {
         }
     }
 
+    val compiledRegex = if (matchMode == MatchMode.REGEX) {
+        val opts = if (caseInsensitive) setOf(RegexOption.IGNORE_CASE) else emptySet()
+        runCatching { Regex(pattern, opts) }.getOrNull()
+    } else null
+
     return candidates.any { value ->
         when (matchMode) {
             MatchMode.SUBSTRING -> value.contains(pattern, ignoreCase = caseInsensitive)
-            MatchMode.REGEX -> {
-                val opts = if (caseInsensitive) setOf(RegexOption.IGNORE_CASE) else emptySet()
-                runCatching { Regex(pattern, opts).containsMatchIn(value) }.getOrDefault(false)
-            }
+            MatchMode.REGEX -> compiledRegex?.containsMatchIn(value) ?: false
         }
     }
 }
@@ -143,21 +152,37 @@ fun parseRuleLine(line: String): AdvancedRoutingRule? {
 
     if (pkg.isBlank() || patternRaw.isBlank()) return null
 
-    val isRegexLiteral = patternRaw.startsWith("/") && (patternRaw.endsWith("/") || patternRaw.endsWith("/i"))
-
     val pattern: String
     val caseInsensitive: Boolean
     val matchMode: MatchMode
 
-    if (isRegexLiteral) {
-        matchMode = MatchMode.REGEX
-        caseInsensitive = patternRaw.endsWith("/i")
-        val endIndex = maxOf(1, if (caseInsensitive) patternRaw.length - 2 else patternRaw.length - 1)
-        pattern = patternRaw.substring(1, endIndex)
-    } else {
-        matchMode = MatchMode.SUBSTRING
-        caseInsensitive = true
-        pattern = patternRaw
+    when {
+        patternRaw.startsWith("regexi:") -> {
+            matchMode = MatchMode.REGEX
+            caseInsensitive = true
+            pattern = patternRaw.substring(7)
+        }
+        patternRaw.startsWith("regex:") -> {
+            matchMode = MatchMode.REGEX
+            caseInsensitive = false
+            pattern = patternRaw.substring(6)
+        }
+        patternRaw.startsWith("contains:") -> {
+            matchMode = MatchMode.SUBSTRING
+            caseInsensitive = true
+            pattern = patternRaw.substring(9)
+        }
+        patternRaw.startsWith("/") && (patternRaw.endsWith("/") || patternRaw.endsWith("/i")) -> {
+            matchMode = MatchMode.REGEX
+            caseInsensitive = patternRaw.endsWith("/i")
+            val endIndex = maxOf(1, if (caseInsensitive) patternRaw.length - 2 else patternRaw.length - 1)
+            pattern = patternRaw.substring(1, endIndex)
+        }
+        else -> {
+            matchMode = MatchMode.SUBSTRING
+            caseInsensitive = true
+            pattern = patternRaw
+        }
     }
 
     val unescapedPattern = pattern.replace("\\:", ":")
@@ -192,3 +217,30 @@ fun findLastUnescapedColon(line: String): Int? {
     }
     return null
 }
+
+
+data class AdvancedRoutingTemplate(
+    val title: String,
+    val description: String,
+    val patternText: String,
+    val defaultOrder: Int = 100
+)
+
+val ADVANCED_ROUTING_TEMPLATES = listOf(
+    AdvancedRoutingTemplate("HLS / m3u8 streams", "Matches HLS playlist links, often used by streaming/proxy servers.", "regexi:\\.m3u8(\\?|$)|/hls/"),
+    AdvancedRoutingTemplate("MPEG-TS segments", "Matches transport-stream links or segment paths.", "regexi:\\.ts(\\?|$)|/segment"),
+    AdvancedRoutingTemplate("Direct video files", "Matches common visible video file extensions in the URL.", "regexi:\\.(mkv|mp4|avi|webm|m4v)(\\?|$)"),
+    AdvancedRoutingTemplate("Matroska only", "Matches direct MKV file links.", "regexi:\\.mkv(\\?|$)"),
+    AdvancedRoutingTemplate("MP4 only", "Matches direct MP4 file links.", "regexi:\\.mp4(\\?|$)"),
+    AdvancedRoutingTemplate("YouTube / trailer links", "Matches trailer text and common YouTube-style links.", "regexi:\\btrailer\\b|youtube\\.com|youtu\\.be|/yt/"),
+    AdvancedRoutingTemplate("Dolby Vision / HDR text", "Matches quality terms when the addon/proxy includes them in the URL/query.", "regexi:\\b(DV|Dolby[ ._-]?Vision|HDR10\\+?|HLG)\\b"),
+    AdvancedRoutingTemplate("HEVC / H.265 text", "Matches codec terms if they are present in the incoming URL/query.", "regexi:\\b(HEVC|H\\.?265|x265)\\b"),
+    AdvancedRoutingTemplate("AV1 text", "Matches AV1 codec text if present.", "regexi:\\bAV1\\b"),
+    AdvancedRoutingTemplate("4K / 2160p text", "Matches 4K quality labels when encoded into the incoming text.", "regexi:\\b(4K|2160p)\\b"),
+    AdvancedRoutingTemplate("1080p text", "Matches 1080p quality labels when encoded into the incoming text.", "regexi:\\b1080p\\b"),
+    AdvancedRoutingTemplate("Local Stremio server", "Matches local Stremio server URLs.", "contains:127.0.0.1"),
+    AdvancedRoutingTemplate("LAN stream host", "Matches private LAN IP stream hosts.", "regexi:https?://(192\\.168\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[0-1])\\.)"),
+    AdvancedRoutingTemplate("Literal path segment", "Shows how to match a literal slash-wrapped path without treating it as regex.", "contains:/api/"),
+    AdvancedRoutingTemplate("Query name/title present", "Matches URLs where addon/proxy included a name or title query parameter.", "regexi:[?&](name|title)="),
+    AdvancedRoutingTemplate("Filename query present", "Matches URLs where addon/proxy included filename-like query data.", "regexi:[?&](filename|file|download)=")
+)

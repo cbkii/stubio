@@ -9,7 +9,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
@@ -40,6 +39,48 @@ class AdvancedRoutingTest {
     }
 
     @Test
+    fun `parse contains prefix`() {
+        val rule = parseRuleLine("pkg:contains:/api/:30")
+        assertNotNull(rule)
+        assertEquals("pkg", rule?.packageName)
+        assertEquals("/api/", rule?.pattern)
+        assertEquals(30, rule?.order)
+        assertEquals(MatchMode.SUBSTRING, rule?.matchMode)
+    }
+
+    @Test
+    fun `parse regex prefix`() {
+        val rule = parseRuleLine("pkg:regex:\\.mkv(\\?|$):40")
+        assertNotNull(rule)
+        assertEquals("pkg", rule?.packageName)
+        assertEquals("\\.mkv(\\?|$)", rule?.pattern)
+        assertEquals(40, rule?.order)
+        assertEquals(MatchMode.REGEX, rule?.matchMode)
+        assertFalse(rule?.caseInsensitive ?: true)
+    }
+
+    @Test
+    fun `parse regexi prefix`() {
+        val rule = parseRuleLine("pkg:regexi:\\.m3u8:50")
+        assertNotNull(rule)
+        assertEquals("pkg", rule?.packageName)
+        assertEquals("\\.m3u8", rule?.pattern)
+        assertEquals(50, rule?.order)
+        assertEquals(MatchMode.REGEX, rule?.matchMode)
+        assertTrue(rule?.caseInsensitive ?: false)
+    }
+
+    @Test
+    fun `parse short invalid slash format avoids exception`() {
+        val rule = parseRuleLine("pkg:/i:10")
+        assertNotNull(rule)
+        assertEquals("pkg", rule?.packageName)
+        assertEquals("", rule?.pattern)
+        assertEquals(10, rule?.order)
+        assertEquals(MatchMode.REGEX, rule?.matchMode)
+    }
+
+    @Test
     fun `reject missing order`() {
         val rule = parseRuleLine("org.videolan.vlc:test_pattern")
         assertNull(rule)
@@ -53,25 +94,11 @@ class AdvancedRoutingTest {
 
     @Test
     fun `pattern containing escaped colon does not break parsing`() {
-        val rule = parseRuleLine("org.videolan.vlc:/https\\://example\\.com/:30")
+        val rule = parseRuleLine("org.videolan.vlc:regexi:https\\://example\\.com:30")
         assertNotNull(rule)
         assertEquals("org.videolan.vlc", rule?.packageName)
         assertEquals("https://example\\.com", rule?.pattern)
         assertEquals(30, rule?.order)
-    }
-
-    @Test
-    fun `rules sort by ascending order`() {
-        val rulesText = """
-            pkg1:pattern:20
-            pkg2:pattern:10
-            pkg3:pattern:30
-        """.trimIndent()
-        val rules = parseAdvancedRules(rulesText).sortedBy { it.order }
-        assertEquals(3, rules.size)
-        assertEquals("pkg2", rules[0].packageName)
-        assertEquals("pkg1", rules[1].packageName)
-        assertEquals("pkg3", rules[2].packageName)
     }
 
     @Test
@@ -90,6 +117,15 @@ class AdvancedRoutingTest {
     }
 
     @Test
+    fun `opaque URI extraction does not crash`() {
+        val uri = Uri.parse("mailto:test@example.com")
+        val context = buildRoutingContext(uri, Intent(), false)
+        assertEquals("mailto", context.scheme)
+        assertNull(context.host)
+        assertNull(context.path)
+    }
+
+    @Test
     fun `rule match substring`() {
         val rule = parseRuleLine("pkg:test:10")!!
 
@@ -105,7 +141,7 @@ class AdvancedRoutingTest {
 
     @Test
     fun `rule match regex`() {
-        val rule = parseRuleLine("pkg:/\\.mkv(\\?|$)/i:10")!!
+        val rule = parseRuleLine("pkg:regexi:\\.mkv(\\?|$):10")!!
 
         val uri1 = Uri.parse("https://example.com/video.mkv")
         val context1 = buildRoutingContext(uri1, Intent(), false)
