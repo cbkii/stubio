@@ -167,15 +167,127 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun routeUri(uri: Uri, originalIntent: Intent) {
-        val match = YOUTUBE_PATH_REGEX.find(uri.toString())
-        if (match != null) {
+        val isTrailer = YOUTUBE_PATH_REGEX.find(uri.toString()) != null
+        val context = buildRoutingContext(uri, originalIntent, isTrailer)
+
+        if (tryLaunchAdvancedRoute(uri, originalIntent, context)) {
+            return
+        }
+
+        if (isTrailer) {
+            val match = YOUTUBE_PATH_REGEX.find(uri.toString())
             launchYouTube(
-                youtubeUrl = "https://www.youtube.com/watch?v=${match.groupValues[1]}",
+                youtubeUrl = "https://www.youtube.com/watch?v=${match!!.groupValues[1]}",
                 originalFlags = originalIntent.flags
             )
         } else {
             launchStreamPlayer(originalIntent)
         }
+    }
+
+    private fun tryLaunchAdvancedRoute(uri: Uri, originalIntent: Intent, context: RoutingContext): Boolean {
+        val sp = getSharedPreferences(SetupActivity.PREFS_NAME, MODE_PRIVATE)
+        val advancedEnabled = sp.getBoolean(SetupActivity.KEY_ADVANCED_ROUTING_ENABLED, false)
+        if (!advancedEnabled) return false
+
+        val rulesText = sp.getString(SetupActivity.KEY_ADVANCED_ROUTING_RULES_TEXT, "") ?: ""
+        if (rulesText.isBlank()) return false
+
+        val rules = parseAdvancedRules(rulesText)
+            .filter { it.enabled }
+            .sortedBy { it.order }
+
+        val launchFlags = resolveLaunchFlags(originalIntent.flags)
+
+        for (rule in rules) {
+            if (rule.target != RouteTarget.ANY) {
+                if (context.isTrailer && rule.target != RouteTarget.TRAILER) continue
+                if (!context.isTrailer && rule.target != RouteTarget.STREAM) continue
+            }
+
+            if (rule.matches(context)) {
+                if (!isPackageInstalled(rule.packageName)) {
+                    if (BuildConfig.DEBUG) Log.w(TAG, "Advanced rule matched package ${rule.packageName} but it is not installed.")
+                    continue
+                }
+
+                // If it's a trailer, we need to transform it to a YouTube URL before launching
+                if (context.isTrailer) {
+                    val match = YOUTUBE_PATH_REGEX.find(uri.toString())
+                    if (match != null) {
+                        val youtubeUrl = "https://www.youtube.com/watch?v=${match.groupValues[1]}"
+                        val ytIntent = Intent(Intent.ACTION_VIEW, Uri.parse(youtubeUrl)).apply {
+                            setPackage(rule.packageName)
+                            addFlags(launchFlags)
+                        }
+                        if (ytIntent.resolveActivity(packageManager) != null) {
+                            selectedTrailerPackage = rule.packageName
+                            runCatching { startActivity(ytIntent) }
+                            finish()
+                            return true
+                        } else {
+                            continue
+                        }
+                    }
+                }
+
+                // Normal stream launch logic
+                // Try mime override, video/*, and data-only fallback
+                val mimeTypesToTry = listOfNotNull(rule.mimeOverride, "video/*")
+
+                var launched = false
+                for (mimeType in mimeTypesToTry) {
+                    val mimeIntent = buildStreamIntent(
+                        streamUri = uri,
+                        packageName = rule.packageName,
+                        extras = originalIntent.extras ?: Bundle(),
+                        launchFlags = launchFlags,
+                        useVideoMimeType = true // Ignored inside if we specify exact mime below
+                    ).apply {
+                        setDataAndType(uri, mimeType)
+                    }
+                    if (mimeIntent.resolveActivity(packageManager) != null) {
+                        updateSelectedStreamPackage(rule.packageName)
+                        runCatching {
+                            if ((originalIntent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT) != 0) {
+                                startActivity(mimeIntent)
+                                finish()
+                            } else {
+                                streamResultLauncher.launch(mimeIntent)
+                            }
+                        }
+                        launched = true
+                        break
+                    }
+                }
+
+                if (!launched) {
+                    val dataOnlyIntent = buildStreamIntent(
+                        streamUri = uri,
+                        packageName = rule.packageName,
+                        extras = originalIntent.extras ?: Bundle(),
+                        launchFlags = launchFlags,
+                        useVideoMimeType = false
+                    )
+                    if (dataOnlyIntent.resolveActivity(packageManager) != null) {
+                        updateSelectedStreamPackage(rule.packageName)
+                        runCatching {
+                            if ((originalIntent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT) != 0) {
+                                startActivity(dataOnlyIntent)
+                                finish()
+                            } else {
+                                streamResultLauncher.launch(dataOnlyIntent)
+                            }
+                        }
+                        launched = true
+                    }
+                }
+
+                if (launched) return true
+            }
+        }
+
+        return false
     }
 
     private fun launchYouTube(youtubeUrl: String, originalFlags: Int) {

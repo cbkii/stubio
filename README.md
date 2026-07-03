@@ -61,3 +61,35 @@ If your saved packages are missing/not launchable, Stubio tries known defaults:
 - **Nothing happens on play**: ensure your stream/trailer URL host is allowed, or add host in “Additional allowed domains/IPs”.
 
 > ℹ️ NOTE: Stubio does **not** perform direct HTTP(S) network requests in app code. The `INTERNET` permission is intentionally kept as a compatibility contract for routed playback flows where external player apps handle network stream URLs.
+
+## Advanced Routing
+
+Stubio supports defining custom routing rules to send different types of streams or trailers to specific video players.
+
+You can configure these rules in the **Advanced Routing** section of the setup screen.
+
+Advanced Routing matches the Android intent data Stubio receives. It can always match URI scheme, host, path, query, and visible file-extension-like text. It can only match Stremio stream name/description/filename when that information is included in the incoming intent or encoded into the URL by the addon/proxy. It evaluates rules in ascending order, launching the first matching package that is installed and can handle the intent.
+
+### Rule Syntax
+```text
+package.name:pattern:order
+```
+
+If the pattern is wrapped in forward slashes (e.g. `/pattern/`), it's treated as a Regex. You can make it case-insensitive by appending `i` (e.g. `/pattern/i`). Otherwise, it's treated as a substring match.
+
+### Examples
+```text
+# HLS / m3u8 streams to VLC
+org.videolan.vlc:/\.m3u8(\?|$)|\/hls\//i:10
+
+# Common direct media URLs to MX Player
+com.mxtech.videoplayer.ad:/\.(mkv|mp4|avi|webm)(\?|$)/i:20
+
+# Trailer/YouTube-like links to SmartTube
+com.teamsmart.videomanager.tv:/\btrailer\b|youtube\.com|\/yt\//i:30
+
+# Dolby Vision/HDR terms if encoded into URL/query by addon/proxy
+org.videolan.vlc:/\b(DV|Dolby[ ._-]?Vision|HDR10\+)\b/i:40
+```
+
+> **Note**: Primary/fallback players remain the default fallback behavior if no advanced routing rules match the incoming stream. Stubio deliberately does not perform direct network requests or probing.

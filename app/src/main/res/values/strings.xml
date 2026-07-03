@@ -36,4 +36,16 @@
     <string name="label_additional_allowed_hosts">Additional allowed domains/IPs (comma-separated)</string>
     <string name="info_additional_allowed_hosts">Optional host allowlist extension used by URI validation. Example: media.example.com, 192.168.1.80, 10.0.0.25</string>
     <string name="hint_additional_allowed_hosts">media.example.com, 192.168.1.80</string>
+
+    <string name="section_advanced_routing">Advanced Routing</string>
+    <string name="advanced_routing_collapsed">Advanced Routing (optional) ▸</string>
+    <string name="advanced_routing_expanded">Advanced Routing (optional) ▾</string>
+    <string name="label_advanced_routing_enabled">Enable advanced routing rules</string>
+    <string name="info_advanced_routing">Optional. Route selected links to specific apps by matching the incoming URL, path, query, filename-like parameters, or intent extras. Full Stremio stream metadata is only available if the upstream addon/proxy encodes it into the URL.</string>
+    <string name="hint_advanced_routing_rules">org.videolan.vlc:/\\.m3u8(\\?|$)|\\/hls\\//i:10</string>
+    <string name="btn_pick_advanced_routing_app">Pick app</string>
+    <string name="btn_validate_advanced_routing">Validate rules</string>
+    <string name="advanced_routing_valid">Advanced routing rules look valid.</string>
+    <string name="advanced_routing_invalid">Advanced routing rule error: %1$s</string>
+    <string name="advanced_routing_app_inserted">Package inserted. Add :pattern:order to complete the rule.</string>
 </resources>

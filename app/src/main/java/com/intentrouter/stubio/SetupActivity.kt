@@ -13,6 +13,9 @@ import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ListView
 import android.widget.Toast
+import android.view.View
+import android.widget.CheckBox
+import android.widget.LinearLayout
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -34,6 +37,13 @@ class SetupActivity : AppCompatActivity() {
     private lateinit var btnPickTrailerFallback: ImageButton
 
     private lateinit var btnSave: Button
+
+    private lateinit var btnAdvancedRoutingToggle: Button
+    private lateinit var advancedRoutingContainer: LinearLayout
+    private lateinit var checkAdvancedRoutingEnabled: CheckBox
+    private lateinit var editAdvancedRoutingRules: EditText
+    private lateinit var btnPickAdvancedRoutingApp: Button
+    private lateinit var btnValidateAdvancedRouting: Button
     private var cachedUserInstalledApps: List<InstalledApp>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,19 +64,66 @@ class SetupActivity : AppCompatActivity() {
 
         btnSave = findViewById(R.id.btnSave)
 
+        btnAdvancedRoutingToggle = findViewById(R.id.btnAdvancedRoutingToggle)
+        advancedRoutingContainer = findViewById(R.id.advancedRoutingContainer)
+        checkAdvancedRoutingEnabled = findViewById(R.id.checkAdvancedRoutingEnabled)
+        editAdvancedRoutingRules = findViewById(R.id.editAdvancedRoutingRules)
+        btnPickAdvancedRoutingApp = findViewById(R.id.btnPickAdvancedRoutingApp)
+        btnValidateAdvancedRouting = findViewById(R.id.btnValidateAdvancedRouting)
+
         loadSavedSettings()
 
-        btnPickStreamPrimary.setOnClickListener { showAppPicker(editStreamPrimary) }
-        btnPickStreamFallback.setOnClickListener { showAppPicker(editStreamFallback) }
-        btnPickTrailerPrimary.setOnClickListener { showAppPicker(editTrailerPrimary) }
-        btnPickTrailerFallback.setOnClickListener { showAppPicker(editTrailerFallback) }
+        btnAdvancedRoutingToggle.setOnClickListener {
+            val isExpanded = advancedRoutingContainer.visibility == View.VISIBLE
+            setAdvancedRoutingExpanded(!isExpanded)
+            getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putBoolean(KEY_ADVANCED_ROUTING_EXPANDED, !isExpanded)
+                .apply()
+        }
+
+        btnPickAdvancedRoutingApp.setOnClickListener { showAppPicker(editAdvancedRoutingRules, true) }
+
+        btnValidateAdvancedRouting.setOnClickListener {
+            val rulesText = editAdvancedRoutingRules.text.toString()
+            val parsed = parseAdvancedRules(rulesText)
+
+            // Reconstruct rulesText to see if there were invalid lines
+            val rawLines = rulesText.lines().map { it.trim() }.filter { it.isNotBlank() && !it.startsWith("#") }
+            if (rawLines.size != parsed.size) {
+                Toast.makeText(this, getString(R.string.advanced_routing_invalid, "Some rules could not be parsed"), Toast.LENGTH_LONG).show()
+                editAdvancedRoutingRules.requestFocus()
+            } else {
+                val invalidPackage = parsed.find { !it.packageName.matches(PACKAGE_PATTERN) }
+                if (invalidPackage != null) {
+                    Toast.makeText(this, getString(R.string.advanced_routing_invalid, "Invalid package name: ${invalidPackage.packageName}"), Toast.LENGTH_LONG).show()
+                    editAdvancedRoutingRules.requestFocus()
+                } else {
+                    Toast.makeText(this, R.string.advanced_routing_valid, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        btnPickStreamPrimary.setOnClickListener { showAppPicker(editStreamPrimary, false) }
+        btnPickStreamFallback.setOnClickListener { showAppPicker(editStreamFallback, false) }
+        btnPickTrailerPrimary.setOnClickListener { showAppPicker(editTrailerPrimary, false) }
+        btnPickTrailerFallback.setOnClickListener { showAppPicker(editTrailerFallback, false) }
 
         btnSave.setOnClickListener { saveSettings() }
 
         editStreamPrimary.requestFocus()
     }
 
-    private fun showAppPicker(targetField: EditText) {
+    private fun setAdvancedRoutingExpanded(expanded: Boolean) {
+        if (expanded) {
+            advancedRoutingContainer.visibility = View.VISIBLE
+            btnAdvancedRoutingToggle.text = getString(R.string.advanced_routing_expanded)
+        } else {
+            advancedRoutingContainer.visibility = View.GONE
+            btnAdvancedRoutingToggle.text = getString(R.string.advanced_routing_collapsed)
+        }
+    }
+
+    private fun showAppPicker(targetField: EditText, isAdvancedRouting: Boolean = false) {
         setPickerButtonsEnabled(false)
 
         lifecycleScope.launch {
@@ -82,11 +139,11 @@ class SetupActivity : AppCompatActivity() {
                 return@launch
             }
 
-            showAppPickerDialog(targetField, apps)
+            showAppPickerDialog(targetField, apps, isAdvancedRouting)
         }
     }
 
-    private fun showAppPickerDialog(targetField: EditText, apps: List<InstalledApp>) {
+    private fun showAppPickerDialog(targetField: EditText, apps: List<InstalledApp>, isAdvancedRouting: Boolean) {
         val currentPackageName = targetField.text.toString().trim()
         val initialSelection = apps.indexOfFirst { it.packageName == currentPackageName }
 
@@ -113,7 +170,7 @@ class SetupActivity : AppCompatActivity() {
                 if (committed) return@setOnClickListener
                 committed = true
                 if (selectedIndex in apps.indices) {
-                    selectAppPackage(targetField, apps[selectedIndex].packageName)
+                    selectAppPackage(targetField, apps[selectedIndex].packageName, isAdvancedRouting)
                 }
                 dialog.dismiss()
             }
@@ -162,9 +219,21 @@ class SetupActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun selectAppPackage(targetField: EditText, packageName: String) {
-        targetField.setText(packageName)
-        targetField.setSelection(packageName.length)
+    private fun selectAppPackage(targetField: EditText, packageName: String, isAdvancedRouting: Boolean) {
+        if (isAdvancedRouting) {
+            val currentText = targetField.text.toString()
+            val newText = if (currentText.isEmpty() || currentText.endsWith("\n")) {
+                currentText + packageName
+            } else {
+                currentText + "\n" + packageName
+            }
+            targetField.setText(newText)
+            targetField.setSelection(newText.length)
+            Toast.makeText(this, R.string.advanced_routing_app_inserted, Toast.LENGTH_LONG).show()
+        } else {
+            targetField.setText(packageName)
+            targetField.setSelection(packageName.length)
+        }
         targetField.requestFocus()
     }
 
@@ -173,6 +242,7 @@ class SetupActivity : AppCompatActivity() {
         btnPickStreamFallback.isEnabled = enabled
         btnPickTrailerPrimary.isEnabled = enabled
         btnPickTrailerFallback.isEnabled = enabled
+        btnPickAdvancedRoutingApp.isEnabled = enabled
     }
 
     private fun loadUserInstalledApps(): List<InstalledApp> {
@@ -202,6 +272,12 @@ class SetupActivity : AppCompatActivity() {
         editTrailerPrimary.setText(sp.getString(KEY_TRAILER_PRIMARY, ""))
         editTrailerFallback.setText(sp.getString(KEY_TRAILER_FALLBACK, ""))
         editAdditionalAllowedHosts.setText(sp.getString(KEY_ADDITIONAL_ALLOWED_HOSTS, ""))
+
+        checkAdvancedRoutingEnabled.isChecked = sp.getBoolean(KEY_ADVANCED_ROUTING_ENABLED, false)
+        editAdvancedRoutingRules.setText(sp.getString(KEY_ADVANCED_ROUTING_RULES_TEXT, ""))
+
+        val expanded = sp.getBoolean(KEY_ADVANCED_ROUTING_EXPANDED, false)
+        setAdvancedRoutingExpanded(expanded)
     }
 
     private fun saveSettings() {
@@ -217,6 +293,31 @@ class SetupActivity : AppCompatActivity() {
             return
         }
 
+        if (checkAdvancedRoutingEnabled.isChecked) {
+            val rulesText = editAdvancedRoutingRules.text.toString()
+            if (rulesText.isNotBlank()) {
+                val parsed = parseAdvancedRules(rulesText)
+                val rawLines = rulesText.lines().map { it.trim() }.filter { it.isNotBlank() && !it.startsWith("#") }
+                if (rawLines.size != parsed.size) {
+                    Toast.makeText(this, getString(R.string.advanced_routing_invalid, "Some rules could not be parsed"), Toast.LENGTH_LONG).show()
+                    setAdvancedRoutingExpanded(true)
+                    editAdvancedRoutingRules.requestFocus()
+                    return
+                }
+
+                val invalidPackage = parsed.find { !it.packageName.matches(PACKAGE_PATTERN) }
+                if (invalidPackage != null) {
+                    Toast.makeText(this, getString(R.string.advanced_routing_invalid, "Invalid package name: ${invalidPackage.packageName}"), Toast.LENGTH_LONG).show()
+                    setAdvancedRoutingExpanded(true)
+                    editAdvancedRoutingRules.requestFocus()
+                    return
+                }
+            } else {
+                Toast.makeText(this, getString(R.string.advanced_routing_invalid, "Advanced routing enabled but no rules provided"), Toast.LENGTH_LONG).show()
+                checkAdvancedRoutingEnabled.isChecked = false
+            }
+        }
+
         val sp = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         sp.edit()
             .putString(KEY_STREAM_PRIMARY, editStreamPrimary.text.toString().trim())
@@ -224,6 +325,8 @@ class SetupActivity : AppCompatActivity() {
             .putString(KEY_TRAILER_PRIMARY, editTrailerPrimary.text.toString().trim())
             .putString(KEY_TRAILER_FALLBACK, editTrailerFallback.text.toString().trim())
             .putString(KEY_ADDITIONAL_ALLOWED_HOSTS, editAdditionalAllowedHosts.text.toString().trim())
+            .putBoolean(KEY_ADVANCED_ROUTING_ENABLED, checkAdvancedRoutingEnabled.isChecked)
+            .putString(KEY_ADVANCED_ROUTING_RULES_TEXT, editAdvancedRoutingRules.text.toString())
             .apply()
 
         Toast.makeText(this, R.string.saved_confirmation, Toast.LENGTH_SHORT).show()
@@ -244,6 +347,9 @@ class SetupActivity : AppCompatActivity() {
         const val KEY_TRAILER_PRIMARY = "trailer_player_primary"
         const val KEY_TRAILER_FALLBACK = "trailer_player_fallback"
         const val KEY_ADDITIONAL_ALLOWED_HOSTS = "additional_allowed_hosts"
+        const val KEY_ADVANCED_ROUTING_ENABLED = "advanced_routing_enabled"
+        const val KEY_ADVANCED_ROUTING_EXPANDED = "advanced_routing_expanded"
+        const val KEY_ADVANCED_ROUTING_RULES_TEXT = "advanced_routing_rules_text"
 
         private val PACKAGE_PATTERN = Regex("^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+")
     }
