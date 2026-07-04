@@ -196,26 +196,26 @@ fun parseRuleLine(line: String): AdvancedRoutingRule? {
     )
 }
 
-fun findUnescapedColon(line: String, start: Int): Int? = findUnescapedColonInternal(line, start, reverse = false)
-
-fun findLastUnescapedColon(line: String): Int? = findUnescapedColonInternal(line, start = 0, reverse = true)
-
-private fun findUnescapedColonInternal(line: String, start: Int, reverse: Boolean): Int? {
-    val indices = if (reverse) (line.length - 1) downTo start else start until line.length
-    for (i in indices) {
-        if (line[i] == ':' && !isEscaped(line, i)) return i
+fun findUnescapedColon(line: String, start: Int): Int? {
+    var i = start
+    while (i < line.length) {
+        if (line[i] == ':') {
+            if (i == 0 || line[i - 1] != '\\') return i
+        }
+        i++
     }
     return null
 }
 
-private fun isEscaped(line: String, index: Int): Boolean {
-    var slashCount = 0
-    var i = index - 1
-    while (i >= 0 && line[i] == '\\') {
-        slashCount++
+fun findLastUnescapedColon(line: String): Int? {
+    var i = line.length - 1
+    while (i >= 0) {
+        if (line[i] == ':') {
+            if (i == 0 || line[i - 1] != '\\') return i
+        }
         i--
     }
-    return slashCount % 2 == 1
+    return null
 }
 
 
