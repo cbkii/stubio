@@ -104,22 +104,12 @@ class SetupActivity : AppCompatActivity() {
         btnAdvancedRoutingTemplates.setOnClickListener { showTemplatesDialog() }
 
         btnValidateAdvancedRouting.setOnClickListener {
-            val rulesText = btnAddAdvancedRule.text.toString()
-            val parsed = parseAdvancedRules(rulesText)
-
-            // Reconstruct rulesText to see if there were invalid lines
-            val rawLines = rulesText.lines().map { it.trim() }.filter { it.isNotBlank() && !it.startsWith("#") }
-            if (rawLines.size != parsed.size) {
-                Toast.makeText(this, getString(R.string.advanced_routing_invalid, "Some rules could not be parsed"), Toast.LENGTH_LONG).show()
+            val error = validateAdvancedRoutingRules(requireRules = false)
+            if (error != null) {
+                Toast.makeText(this, getString(R.string.advanced_routing_invalid, error), Toast.LENGTH_LONG).show()
                 btnAddAdvancedRule.requestFocus()
             } else {
-                val invalidPackage = parsed.find { !it.packageName.matches(PACKAGE_PATTERN) }
-                if (invalidPackage != null) {
-                    Toast.makeText(this, getString(R.string.advanced_routing_invalid, "Invalid package name: ${invalidPackage.packageName}"), Toast.LENGTH_LONG).show()
-                    btnAddAdvancedRule.requestFocus()
-                } else {
-                    Toast.makeText(this, R.string.advanced_routing_valid, Toast.LENGTH_SHORT).show()
-                }
+                Toast.makeText(this, R.string.advanced_routing_valid, Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -178,7 +168,6 @@ class SetupActivity : AppCompatActivity() {
             }
             // Add listview dynamically to alert dialog
             dialog.setView(listView)
-            dialog.setContentView(listView) // Replaces default content view
             listView.requestFocus()
         }
         dialog.show()
