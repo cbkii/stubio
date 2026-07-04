@@ -36,4 +36,39 @@
     <string name="label_additional_allowed_hosts">Additional allowed domains/IPs (comma-separated)</string>
     <string name="info_additional_allowed_hosts">Optional host allowlist extension used by URI validation. Example: media.example.com, 192.168.1.80, 10.0.0.25</string>
     <string name="hint_additional_allowed_hosts">media.example.com, 192.168.1.80</string>
+
+    <string name="section_advanced_routing">Advanced Routing</string>
+    <string name="advanced_routing_collapsed">Advanced Routing (optional) ▸</string>
+    <string name="advanced_routing_expanded">Advanced Routing (optional) ▾</string>
+    <string name="label_advanced_routing_enabled">Enable advanced routing rules</string>
+    <string name="info_advanced_routing">Optional. Route selected links to specific apps by matching the incoming URL, path, query, filename-like parameters, or intent extras. Full Stremio stream metadata is only available if the upstream addon/proxy encodes it into the URL.</string>
+    <string name="hint_advanced_routing_rules">org.videolan.vlc:/\\.m3u8(\\?|$)|\\/hls\\//i:10</string>
+    <string name="btn_pick_advanced_routing_app">Pick app</string>
+    <string name="btn_validate_advanced_routing">Validate rules</string>
+    <string name="advanced_routing_valid">Advanced routing rules look valid.</string>
+    <string name="advanced_routing_invalid">Advanced routing rule error: %1$s</string>
+    <string name="advanced_routing_app_inserted">Package inserted. Add :pattern:order to complete the rule.</string>
+    <string name="error_rules_parsing_failed">Some rules could not be parsed.</string>
+    <string name="error_invalid_package_name">Invalid package name: %1$s</string>
+    <string name="error_no_rules_provided">Advanced routing is enabled but no rules are configured.</string>
+    <string name="error_invalid_regex">Invalid regex pattern: %1$s</string>
+    <string name="btn_advanced_routing_templates">📋 Templates</string>
+    <string name="advanced_routing_templates_title">Advanced Routing Templates</string>
+    <string name="advanced_routing_templates_info">Choose a template to insert a pattern into the selected rule.</string>
+    <string name="advanced_routing_template_insert">Insert</string>
+    <string name="advanced_routing_template_copied">Template inserted.</string>
+    <string name="advanced_routing_regex_docs">🔗 Refer to regex pattern docs</string>
+    <string name="advanced_routing_regex_docs_url">https://developer.android.com/reference/java/util/regex/Pattern</string>
+
+    <string name="btn_add_advanced_rule">Add rule</string>
+    <string name="btn_delete_rule">Delete</string>
+    <string name="btn_edit_rule">Edit</string>
+    <string name="btn_pick_rule_app">Pick app</string>
+    <string name="label_rule_enabled">Enabled</string>
+    <string name="label_rule_pattern">Pattern</string>
+    <string name="label_rule_order">Order</string>
+    <string name="delete_rule_title">Delete routing rule?</string>
+    <string name="delete_rule_message">This removes the selected advanced routing rule.</string>
+    <string name="delete_rule_confirm">Delete</string>
+    <string name="delete_rule_cancel">Cancel</string>
 </resources>

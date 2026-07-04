@@ -167,15 +167,149 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun routeUri(uri: Uri, originalIntent: Intent) {
-        val match = YOUTUBE_PATH_REGEX.find(uri.toString())
-        if (match != null) {
+        val youtubeMatch = YOUTUBE_PATH_REGEX.find(uri.toString())
+        val isTrailer = youtubeMatch != null
+        val context = buildRoutingContext(uri, originalIntent, isTrailer)
+
+        if (tryLaunchAdvancedRoute(uri, originalIntent, context, youtubeMatch)) {
+            return
+        }
+
+        if (youtubeMatch != null) {
             launchYouTube(
-                youtubeUrl = "https://www.youtube.com/watch?v=${match.groupValues[1]}",
+                youtubeUrl = "https://www.youtube.com/watch?v=${youtubeMatch.groupValues[1]}",
                 originalFlags = originalIntent.flags
             )
         } else {
             launchStreamPlayer(originalIntent)
         }
+    }
+
+    private fun tryLaunchAdvancedRoute(uri: Uri, originalIntent: Intent, context: RoutingContext, youtubeMatch: MatchResult?): Boolean {
+        val sp = getSharedPreferences(SetupActivity.PREFS_NAME, MODE_PRIVATE)
+        val advancedEnabled = sp.getBoolean(SetupActivity.KEY_ADVANCED_ROUTING_ENABLED, false)
+        if (!advancedEnabled) return false
+
+        val rulesJson = sp.getString(SetupActivity.KEY_ADVANCED_ROUTING_RULES_JSON, null)
+        val rules = if (rulesJson != null) {
+            deserializeAdvancedRules(rulesJson).mapNotNull { it.toAdvancedRoutingRule() }
+        } else {
+            val rulesText = sp.getString(SetupActivity.KEY_ADVANCED_ROUTING_RULES_TEXT, "") ?: ""
+            if (rulesText.isNotBlank()) parseAdvancedRules(rulesText) else emptyList()
+        }.filter { it.enabled }.sortedBy { it.order }
+
+        if (rules.isEmpty()) return false
+
+        val launchFlags = resolveLaunchFlags(originalIntent.flags)
+
+        for (rule in rules) {
+            if (rule.target != RouteTarget.ANY) {
+                if (context.isTrailer && rule.target != RouteTarget.TRAILER) continue
+                if (!context.isTrailer && rule.target != RouteTarget.STREAM) continue
+            }
+
+            if (rule.matches(context)) {
+                if (!isPackageInstalled(rule.packageName)) {
+                    if (BuildConfig.DEBUG) Log.w(TAG, "Advanced rule matched package ${rule.packageName} but it is not installed.")
+                    continue
+                }
+
+                // If it's a trailer, we need to transform it to a YouTube URL before launching
+                if (context.isTrailer) {
+                    if (youtubeMatch != null) {
+                        val youtubeUrl = "https://www.youtube.com/watch?v=${youtubeMatch.groupValues[1]}"
+                        val ytIntent = Intent(Intent.ACTION_VIEW, Uri.parse(youtubeUrl)).apply {
+                            setPackage(rule.packageName)
+                            addFlags(launchFlags)
+                        }
+                        if (ytIntent.resolveActivity(packageManager) != null) {
+                            val started = runCatching {
+                                startActivity(ytIntent)
+                            }.onFailure {
+                                if (BuildConfig.DEBUG) Log.e(TAG, "Unable to launch advanced trailer route", it)
+                            }.isSuccess
+
+                            if (started) {
+                                selectedTrailerPackage = rule.packageName
+                                finish()
+                                return true
+                            }
+                        }
+                        continue
+                    }
+                }
+
+                // Normal stream launch logic
+                // Try mime override, video/*, and data-only fallback
+                val mimeTypesToTry = listOfNotNull(rule.mimeOverride, "video/*")
+
+                var launched = false
+                for (mimeType in mimeTypesToTry) {
+                    val mimeIntent = buildStreamIntent(
+                        streamUri = uri,
+                        packageName = rule.packageName,
+                        extras = originalIntent.extras ?: Bundle(),
+                        launchFlags = launchFlags,
+                        useVideoMimeType = true // Ignored inside if we specify exact mime below
+                    ).apply {
+                        setDataAndType(uri, mimeType)
+                    }
+                    if (mimeIntent.resolveActivity(packageManager) != null) {
+                        val started = runCatching {
+                            if ((originalIntent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT) != 0) {
+                                startActivity(mimeIntent)
+                            } else {
+                                streamResultLauncher.launch(mimeIntent)
+                            }
+                        }.onFailure {
+                            if (BuildConfig.DEBUG) Log.e(TAG, "Unable to launch advanced stream route (mime)", it)
+                        }.isSuccess
+
+                        if (started) {
+                            updateSelectedStreamPackage(rule.packageName)
+                            if ((originalIntent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT) != 0) {
+                                finish()
+                            }
+                            launched = true
+                            break
+                        }
+                    }
+                }
+
+                if (!launched) {
+                    val dataOnlyIntent = buildStreamIntent(
+                        streamUri = uri,
+                        packageName = rule.packageName,
+                        extras = originalIntent.extras ?: Bundle(),
+                        launchFlags = launchFlags,
+                        useVideoMimeType = false
+                    )
+                    if (dataOnlyIntent.resolveActivity(packageManager) != null) {
+                        val started = runCatching {
+                            if ((originalIntent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT) != 0) {
+                                startActivity(dataOnlyIntent)
+                            } else {
+                                streamResultLauncher.launch(dataOnlyIntent)
+                            }
+                        }.onFailure {
+                            if (BuildConfig.DEBUG) Log.e(TAG, "Unable to launch advanced stream route (data-only)", it)
+                        }.isSuccess
+
+                        if (started) {
+                            updateSelectedStreamPackage(rule.packageName)
+                            if ((originalIntent.flags and Intent.FLAG_ACTIVITY_FORWARD_RESULT) != 0) {
+                                finish()
+                            }
+                            launched = true
+                        }
+                    }
+                }
+
+                if (launched) return true
+            }
+        }
+
+        return false
     }
 
     private fun launchYouTube(youtubeUrl: String, originalFlags: Int) {

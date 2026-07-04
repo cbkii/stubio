@@ -154,13 +154,117 @@
             android:imeOptions="actionDone"
             android:inputType="text"
             android:maxLines="1"
-            android:nextFocusDown="@id/btnSave"
+            android:nextFocusDown="@id/btnAdvancedRoutingToggle"
             android:nextFocusUp="@id/editTrailerFallback"
             android:paddingHorizontal="16dp"
             android:scrollHorizontally="true"
             android:textColor="@color/text_primary"
             android:textColorHint="@color/text_hint"
             android:textSize="18sp" />
+
+        <Button
+            android:id="@+id/btnAdvancedRoutingToggle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:minHeight="48dp"
+            android:text="@string/advanced_routing_collapsed"
+            android:textAllCaps="false"
+            android:background="@drawable/btn_save_bg"
+            android:textColor="@color/text_primary"
+            android:focusable="true"
+            android:nextFocusUp="@id/editAdditionalAllowedHosts"
+            android:nextFocusDown="@id/checkAdvancedRoutingEnabled" />
+
+        <LinearLayout
+            android:id="@+id/advancedRoutingContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/textAdvancedRoutingInfo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/info_advanced_routing"
+                android:textColor="@color/text_hint"
+                android:textSize="14sp"
+                android:layout_marginBottom="8dp" />
+
+            <CheckBox
+                android:id="@+id/checkAdvancedRoutingEnabled"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/label_advanced_routing_enabled"
+                android:textColor="@color/text_primary"
+                android:focusable="true"
+                android:nextFocusUp="@id/btnAdvancedRoutingToggle"
+                android:nextFocusDown="@id/btnAddAdvancedRule" />
+
+            <LinearLayout
+                android:id="@+id/layoutAdvancedRulesList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="8dp" />
+
+            <Button
+                android:id="@+id/btnAddAdvancedRule"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/btn_add_advanced_rule"
+                android:textAllCaps="false"
+                android:background="@drawable/btn_save_bg"
+                android:textColor="@color/text_primary"
+                android:layout_marginTop="8dp"
+                android:nextFocusUp="@id/checkAdvancedRoutingEnabled"
+                android:nextFocusDown="@id/btnAddAdvancedRule" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp">
+
+
+
+                <Button
+                    android:id="@+id/btnAdvancedRoutingTemplates"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:text="@string/btn_advanced_routing_templates"
+                    android:textAllCaps="false"
+                    android:layout_marginEnd="4dp"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/btn_save_bg"
+                    android:textColor="@color/text_primary"
+                    android:nextFocusUp="@id/btnAddAdvancedRule"
+                    android:nextFocusDown="@id/btnSave"
+                    android:nextFocusRight="@id/btnValidateAdvancedRouting"
+                    android:nextFocusLeft="@id/btnAdvancedRoutingTemplates" />
+
+                <Button
+                    android:id="@+id/btnValidateAdvancedRouting"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:text="@string/btn_validate_advanced_routing"
+                    android:textAllCaps="false"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/btn_save_bg"
+                    android:textColor="@color/text_primary"
+                    android:nextFocusUp="@id/btnAddAdvancedRule"
+                    android:nextFocusDown="@id/btnSave"
+                    android:nextFocusLeft="@id/btnAdvancedRoutingTemplates" />
+            </LinearLayout>
+        </LinearLayout>
 
         <!-- Save button — full width below both columns -->
         <Button
@@ -172,7 +276,7 @@
             android:background="@drawable/btn_save_bg"
             android:focusable="true"
             android:nextFocusDown="@id/btnPickStreamPrimary"
-            android:nextFocusUp="@id/editAdditionalAllowedHosts"
+            android:nextFocusUp="@id/btnValidateAdvancedRouting"
             android:stateListAnimator="@null"
             android:text="@string/btn_save"
             android:textAllCaps="false"
