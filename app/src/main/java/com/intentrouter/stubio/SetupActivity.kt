@@ -104,22 +104,13 @@ class SetupActivity : AppCompatActivity() {
         btnAdvancedRoutingTemplates.setOnClickListener { showTemplatesDialog() }
 
         btnValidateAdvancedRouting.setOnClickListener {
-            val rulesText = btnAddAdvancedRule.text.toString()
-            val parsed = parseAdvancedRules(rulesText)
-
-            // Reconstruct rulesText to see if there were invalid lines
-            val rawLines = rulesText.lines().map { it.trim() }.filter { it.isNotBlank() && !it.startsWith("#") }
-            if (rawLines.size != parsed.size) {
-                Toast.makeText(this, getString(R.string.advanced_routing_invalid, "Some rules could not be parsed"), Toast.LENGTH_LONG).show()
+            val error = validateAdvancedRoutingRules(requireRules = checkAdvancedRoutingEnabled.isChecked)
+            if (error != null) {
+                Toast.makeText(this, getString(R.string.advanced_routing_invalid, error), Toast.LENGTH_LONG).show()
+                setAdvancedRoutingExpanded(true)
                 btnAddAdvancedRule.requestFocus()
             } else {
-                val invalidPackage = parsed.find { !it.packageName.matches(PACKAGE_PATTERN) }
-                if (invalidPackage != null) {
-                    Toast.makeText(this, getString(R.string.advanced_routing_invalid, "Invalid package name: ${invalidPackage.packageName}"), Toast.LENGTH_LONG).show()
-                    btnAddAdvancedRule.requestFocus()
-                } else {
-                    Toast.makeText(this, R.string.advanced_routing_valid, Toast.LENGTH_SHORT).show()
-                }
+                Toast.makeText(this, R.string.advanced_routing_valid, Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -135,15 +126,7 @@ class SetupActivity : AppCompatActivity() {
 
 
     private fun showTemplatesDialog() {
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.advanced_routing_templates_title)
-            .setNegativeButton(R.string.app_picker_close, null)
-            .setNeutralButton(R.string.advanced_routing_regex_docs) { _, _ ->
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.advanced_routing_regex_docs_url)))
-                runCatching { startActivity(intent) }
-            }
-            .create()
-
+        val listView = ListView(this)
         val adapter = object : ArrayAdapter<AdvancedRoutingTemplate>(this, 0, ADVANCED_ROUTING_TEMPLATES) {
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
                 val view = convertView ?: LayoutInflater.from(context).inflate(R.layout.view_advanced_template_row, parent, false)
@@ -154,33 +137,34 @@ class SetupActivity : AppCompatActivity() {
                 return view
             }
         }
+        listView.adapter = adapter
+        listView.choiceMode = ListView.CHOICE_MODE_SINGLE
 
-        dialog.setOnShowListener {
-            val listView = ListView(this).apply {
-                this.adapter = adapter
-                this.setOnItemClickListener { _, _, position, _ ->
-                    val template = adapter.getItem(position)!!
-
-                    // Provide template into a new rule row
-                    val newRule = AdvancedRoutingRuleConfig(
-                        id = UUID.randomUUID().toString(),
-                        patternRaw = template.patternText,
-                        order = template.defaultOrder,
-                        packageName = "app.package.name" // placeholder or could use selected app
-                    )
-                    advancedRulesConfigs.add(newRule)
-                    renderAdvancedRules()
-                    showEditRuleDialog(newRule)
-
-                    Toast.makeText(this@SetupActivity, R.string.advanced_routing_template_copied, Toast.LENGTH_SHORT).show()
-                    dialog.dismiss()
-                }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.advanced_routing_templates_title)
+            .setView(listView)
+            .setNegativeButton(R.string.app_picker_close, null)
+            .setNeutralButton(R.string.advanced_routing_regex_docs) { _, _ ->
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.advanced_routing_regex_docs_url)))
+                runCatching { startActivity(intent) }
             }
-            // Add listview dynamically to alert dialog
-            dialog.setView(listView)
-            dialog.setContentView(listView) // Replaces default content view
-            listView.requestFocus()
+            .create()
+
+        listView.setOnItemClickListener { _, _, position, _ ->
+            val template = adapter.getItem(position)!!
+            val newRule = AdvancedRoutingRuleConfig(
+                id = UUID.randomUUID().toString(),
+                patternRaw = template.patternText,
+                order = (advancedRulesConfigs.maxOfOrNull { it.order } ?: 0) + 10
+            )
+            advancedRulesConfigs.add(newRule)
+            renderAdvancedRules()
+            showEditRuleDialog(newRule)
+            Toast.makeText(this@SetupActivity, R.string.advanced_routing_template_copied, Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
         }
+
+        dialog.setOnShowListener { listView.requestFocus() }
         dialog.show()
     }
 
@@ -225,14 +209,33 @@ class SetupActivity : AppCompatActivity() {
             return if (requireRules) getString(R.string.error_no_rules_provided) else null
         }
 
-        val invalidPackage = advancedRulesConfigs.find { it.packageName.isNotBlank() && !it.packageName.matches(PACKAGE_PATTERN) }
-        if (invalidPackage != null) {
-            return getString(R.string.error_invalid_package_name, invalidPackage.packageName)
+        val rulesToValidate = if (requireRules) {
+            advancedRulesConfigs.filter { it.enabled }
+        } else {
+            advancedRulesConfigs
         }
 
-        val missingPattern = advancedRulesConfigs.find { it.patternRaw.isBlank() }
-        if (missingPattern != null) {
-            return "Rule missing pattern"
+        if (requireRules && rulesToValidate.isEmpty()) {
+            return getString(R.string.error_no_rules_provided)
+        }
+
+        for (config in rulesToValidate) {
+            if (config.packageName.isBlank()) {
+                return getString(R.string.error_rule_missing_app)
+            }
+            if (!config.packageName.matches(PACKAGE_PATTERN)) {
+                return getString(R.string.error_invalid_package_name, config.packageName)
+            }
+            if (config.patternRaw.isBlank()) {
+                return getString(R.string.error_rule_missing_pattern)
+            }
+
+            val parsed = config.toAdvancedRoutingRule() ?: return getString(R.string.error_rules_parsing_failed)
+            if (parsed.matchMode == MatchMode.REGEX) {
+                val opts = if (parsed.caseInsensitive) setOf(RegexOption.IGNORE_CASE) else emptySet()
+                val validRegex = runCatching { Regex(parsed.pattern, opts) }.isSuccess
+                if (!validRegex) return getString(R.string.error_invalid_regex, parsed.pattern)
+            }
         }
 
         return null
@@ -300,15 +303,7 @@ class SetupActivity : AppCompatActivity() {
             .create()
 
         btnPickApp.setOnClickListener {
-            // Reusing app picker slightly modified
-            val apps = cachedUserInstalledApps ?: emptyList()
-            if (apps.isNotEmpty()) {
-                val labels = apps.map { "${it.appName} (${it.packageName})" }.toTypedArray()
-                AlertDialog.Builder(this)
-                    .setItems(labels) { _, which ->
-                        editApp.setText(apps[which].packageName)
-                    }.show()
-            }
+            showAppPicker(editApp, false)
         }
 
         dialog.show()
@@ -482,29 +477,12 @@ class SetupActivity : AppCompatActivity() {
             return
         }
 
-        if (checkAdvancedRoutingEnabled.isChecked) {
-            val rulesText = btnAddAdvancedRule.text.toString()
-            if (rulesText.isNotBlank()) {
-                val parsed = parseAdvancedRules(rulesText)
-                val rawLines = rulesText.lines().map { it.trim() }.filter { it.isNotBlank() && !it.startsWith("#") }
-                if (rawLines.size != parsed.size) {
-                    Toast.makeText(this, getString(R.string.advanced_routing_invalid, "Some rules could not be parsed"), Toast.LENGTH_LONG).show()
-                    setAdvancedRoutingExpanded(true)
-                    btnAddAdvancedRule.requestFocus()
-                    return
-                }
-
-                val invalidPackage = parsed.find { !it.packageName.matches(PACKAGE_PATTERN) }
-                if (invalidPackage != null) {
-                    Toast.makeText(this, getString(R.string.advanced_routing_invalid, "Invalid package name: ${invalidPackage.packageName}"), Toast.LENGTH_LONG).show()
-                    setAdvancedRoutingExpanded(true)
-                    btnAddAdvancedRule.requestFocus()
-                    return
-                }
-            } else {
-                Toast.makeText(this, getString(R.string.advanced_routing_invalid, "Advanced routing enabled but no rules provided"), Toast.LENGTH_LONG).show()
-                checkAdvancedRoutingEnabled.isChecked = false
-            }
+        val advancedRoutingError = validateAdvancedRoutingRules(requireRules = checkAdvancedRoutingEnabled.isChecked)
+        if (advancedRoutingError != null) {
+            Toast.makeText(this, getString(R.string.advanced_routing_invalid, advancedRoutingError), Toast.LENGTH_LONG).show()
+            setAdvancedRoutingExpanded(true)
+            btnAddAdvancedRule.requestFocus()
+            return
         }
 
         val sp = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

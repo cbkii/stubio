@@ -81,6 +81,16 @@ class AdvancedRoutingTest {
     }
 
     @Test
+    fun `parse very short slash regex variants do not throw`() {
+        val single = parseRuleLine("pkg:/i:10")
+        val doubled = parseRuleLine("pkg://:10")
+        assertNotNull(single)
+        assertNotNull(doubled)
+        assertEquals(MatchMode.REGEX, single?.matchMode)
+        assertEquals(MatchMode.REGEX, doubled?.matchMode)
+    }
+
+    @Test
     fun `reject missing order`() {
         val rule = parseRuleLine("org.videolan.vlc:test_pattern")
         assertNull(rule)

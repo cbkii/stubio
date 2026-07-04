@@ -52,6 +52,8 @@
     <string name="error_invalid_package_name">Invalid package name: %1$s</string>
     <string name="error_no_rules_provided">Advanced routing is enabled but no rules are configured.</string>
     <string name="error_invalid_regex">Invalid regex pattern: %1$s</string>
+    <string name="error_rule_missing_app">Rule is missing an app package.</string>
+    <string name="error_rule_missing_pattern">Rule is missing a pattern.</string>
     <string name="btn_advanced_routing_templates">📋 Templates</string>
     <string name="advanced_routing_templates_title">Advanced Routing Templates</string>
     <string name="advanced_routing_templates_info">Choose a template to insert a pattern into the selected rule.</string>
